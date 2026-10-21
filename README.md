@@ -1,123 +1,82 @@
 # herdr-shepherd
 
-An independent tool for [herdr](https://herdr.dev).
-Open Claude Code and Codex teams in a selected folder.
-Let the agents discover their team, send tasks, and read results.
+Open a team of Claude Code and Codex sessions in one folder through [herdr](https://herdr.dev).
+Choose a boss and workers.
+Discover their sessions.
+Send tasks between them.
 
-The package includes a Rust CLI, agent skill, installer, and tests.
-It does not require Ghostty, dotfiles, another repository, or a personal skill installer.
-It does not create or manage Git worktrees.
+The package includes a Rust CLI and a shared [agent skill](skills/herdr-shepherd/SKILL.md).
+Bosses and workers can use different agents and models.
+The package does not create or manage Git worktrees.
 
-## Requirements
+## Quick start
 
-- macOS or Linux.
-- herdr 0.7.3 or later. Version 0.7.3 is the initial supported version.
-- Claude Code, Codex, or both, with authentication complete.
+Install herdr 0.7.3 or later.
+Authenticate Claude Code, Codex, or both.
+Source builds also require [Rust](https://www.rust-lang.org/tools/install) 1.89 or later and a C linker.
 
-The compiled commands do not require Rust, Bash, or Python.
-Source builds require [Rust](https://www.rust-lang.org/tools/install) 1.89 or later and a C linker.
-Python 3.9 or later is required only for the compatibility tests.
-
-The default agents are Claude Code.
-Claude Code uses `fable` for the boss and `opus` for workers.
-Codex uses `gpt-6-astra` for the boss and `gpt-6.1-sol` for workers.
-Use `--boss-model`, `--worker-model`, or `--model` when your account needs different models.
-If a pane reports a model error, select an available model with the option for that role.
-A worker model override applies to all worker types.
-Select models that each selected agent type supports.
-
-Codex starts with `--approve-for-me`.
-This mode retains the workspace sandbox and uses automatic approval review.
-The agent can request approved access to the herdr socket when its sandbox blocks communication.
-
-## Install
-
-Warning: starting the herdr server inside an agent can pass environment variables that break Claude sessions.
-Start herdr from a normal terminal.
-The native installer does not start the server or download dependencies.
-
-From this repository, build the binary and install the command links:
+From a checkout of this repository:
 
 ```sh
 cargo build --release --locked
 ./install.sh
-./install.sh check
-```
-
-Cargo downloads the Rust dependencies on the first build.
-The install script uses the existing binary and does not build or download files.
-To build without installing links:
-
-```sh
-cargo build --release --locked
-./bin/herdr-shepherd --version
-```
-
-To install an existing build without Cargo:
-
-```sh
-./bin/herdr-shepherd --install
-./bin/herdr-shepherd --install check
-```
-
-The installer checks dependencies and creates these links:
-
-| Path | Purpose |
-| --- | --- |
-| `~/.local/bin/herdr-shepherd` | Open, join, or inspect a team. |
-| `~/.local/bin/herd-boss` | Preserve the previous command name. |
-| `~/.local/bin/herd-view` | Show registered sessions. |
-| `~/.claude/skills/herdr-shepherd` | Make the skill available to Claude Code. |
-| `~/.agents/skills/herdr-shepherd` | Make the skill available to Codex. |
-
-The installer preserves existing files and links.
-Move conflicting paths before installation.
-It does not modify your shell or terminal configuration.
-If needed, add the command directory to your shell's PATH:
-
-```sh
 export PATH="$HOME/.local/bin:$PATH"
+herdr-shepherd --help
 ```
 
-Keep this checkout at its installed location.
-Moving or deleting it breaks the links.
-Start a new agent session to discover the installed skill.
-The launcher also gives every new agent the exact skill path.
+The installer makes the commands available from any folder for your user account.
+It also registers the skill for Claude Code and Codex.
+If an existing command blocks installation, use the [command-only installation](#keep-existing-command-aliases).
 
-After a build, you can run `./bin/herdr-shepherd` without installing links.
-The three commands use the same compiled binary.
-For distribution, copy the binary to `bin/herdr-shepherd` and keep the `skills` directory beside `bin`.
-Keep `herd-boss` and `herd-view` as links to `herdr-shepherd` in `bin`.
-The compiled package can move before installation; it contains no fixed source path.
+Warning: start herdr from a normal terminal outside an agent session.
+A server that inherits agent environment variables can prevent Claude Code from starting.
 
-## Open a team
+```sh
+herdr
+```
 
-Run the command without arguments in a terminal to open the interactive setup:
+Inside herdr, open the interactive setup:
 
 ```sh
 herdr-shepherd
 ```
 
-The setup asks for the task name, working folder, boss agent, worker agent, and worker count.
+## Interactive setup
+
 Press Enter to accept each default.
-The defaults are `my-task`, the current folder, Claude Code for both roles, and three workers.
-Enter `1` for Claude Code or `2` for Codex at each agent prompt.
-You can also enter `claude` or `codex`.
+Enter `1` or `claude` for Claude Code.
+Enter `2` or `codex` for Codex.
+
+For example, select a Codex boss and one Codex worker:
+
+```text
+Task name [my-task]: my-task
+Working folder [/path/to/project]:
+Agents: 1 = Claude Code, 2 = Codex. Enter a number or command name.
+Boss agent [claude]: 2
+Worker agent [claude]: 2
+Worker count [3]: 1
+
+Command: herdr-shepherd my-task --cwd /path/to/project --boss-agent codex --worker-agent codex --workers 1
+Start this team? y/n [y]: y
+```
+
+The folder defaults to your current folder.
+It accepts relative paths, absolute paths, and `~`.
 The selected worker agent applies to every worker.
-The folder prompt accepts relative paths, absolute paths, and `~`.
-The setup shows the command and asks before it creates the team.
 Press Ctrl+C to cancel, or enter `n` at the final prompt.
 
-You can select the interactive setup explicitly or preview it without creating a team:
+To preview the setup without creating panes:
 
 ```sh
-herdr-shepherd --interactive
 herdr-shepherd --interactive --dry-run
 ```
 
-`--interactive` accepts only `--dry-run`.
-Without arguments, the command opens the setup only when its input and output use a terminal.
-The existing command options remain available for scripts and mixed worker types.
+`--interactive` accepts only `--dry-run` and help options.
+Without arguments, the command opens the setup when its input and output use a terminal.
+Use explicit command options in scripts.
+
+## Command options
 
 Start a Codex boss and one Codex worker:
 
@@ -133,40 +92,54 @@ herdr-shepherd my-task --cwd /path/to/project \
   --boss-agent codex --worker-agent claude --worker-agent codex
 ```
 
-Every session starts in the selected folder.
-The boss receives the name `my-task-boss`.
-Workers receive names such as `my-task-w1`.
-The startup prompt identifies each agent's role and tells it to read the skill.
-The boss waits for your task.
-
-One `--worker-agent` applies to every worker selected by `--workers N`.
+One `--worker-agent` applies to the count selected by `--workers`.
 Multiple entries define the worker order and count.
-The default worker count is three when the entries do not define a count.
+An explicit count must match a list with multiple entries.
+The default count is three.
 Use `--workers 0` to start only a boss.
-Keep task names unique on the current herdr server.
+Add `--dry-run` to preview commands.
+Use `herdr-shepherd -h` for all options.
 
-Preview commands without creating sessions:
+Every session starts in the selected folder.
+The boss receives the name `my-task-boss` and waits for your task.
+Workers receive names such as `my-task-w1` and wait for the boss.
+Each agent receives its role and the path to the skill.
+Keep task names unique on the herdr server.
 
-```sh
-herdr-shepherd my-task --boss-agent codex --workers 1 --dry-run
-```
+## Default agents and models
+
+Both roles default to Claude Code.
+
+| Agent | Boss model | Worker model |
+| --- | --- | --- |
+| Claude Code | `fable` | `opus` |
+| Codex | `gpt-6-astra` | `gpt-6.1-sol` |
+
+Use `--boss-model` or `--worker-model` to change the model for that role.
+Use `--model` to change both roles.
+A worker model override applies to every worker type.
+Select models that your account and each selected agent support.
+
+Codex starts with `--approve-for-me`.
+This retains the workspace sandbox and uses automatic approval review.
+Socket access can require approval from the agent's permission controls.
 
 ## Join and discover a team
 
-From a shell in a herdr pane:
+From a shell in a herdr pane, turn the current terminal into a worker:
 
 ```sh
 herdr-shepherd my-task --add-worker --worker-agent codex --cwd /path/to/project
 ```
 
-The command registers the current pane and starts the selected agent in that terminal.
+The boss must exist, and the worker must use the boss folder.
 From an existing Claude Code or Codex session, use `--add-worker` without model or folder options.
-The command prints the worker instructions and preserves the existing session.
-The worker must use the boss folder.
-A folder mismatch stops registration before the command changes the pane name.
-The command requires a valid `HERDR_PANE_ID` from the target pane.
+The command registers the session and prints its worker instructions.
+It preserves the running session, model, and folder.
+Registration requires a valid `HERDR_PANE_ID` from the target pane.
+Repeat registration keeps the same worker name.
 
-Both roles can discover team members across tabs:
+Discover members across tabs:
 
 ```sh
 herdr-shepherd my-task --team
@@ -174,16 +147,14 @@ herdr-shepherd my-task --team --json
 ```
 
 JSON includes each member's name, role, agent type, status, pane ID, and folder.
-These commands still require the task name.
-Use `herd-view --watch` to inspect all registered sessions.
+Use `herd-view --watch` to inspect all registered sessions after a full installation.
 
-## Communicate
+## Send tasks and read results
 
 Warning: agents in the shared folder can overwrite each other's changes.
 Assign separate files to editing workers, or use one editing worker at a time.
 
-Use the [skill](skills/herdr-shepherd/SKILL.md) for the complete communication procedure.
-Check that the target is idle and its input contains no unrelated prompt before you send a task.
+Check that the target is idle and contains no unrelated unsent prompt.
 Replace `WORKER_PANE_ID` with the pane ID from the team output:
 
 ```sh
@@ -193,16 +164,70 @@ herdr agent wait my-task-w1 --status idle --timeout 600000
 herdr agent read my-task-w1 --lines 80
 ```
 
-Workers normally report results in their own panes for the boss to read.
-A worker can contact an idle boss with the same send sequence when the boss requests a reply.
+Both `send` and `Enter` are necessary.
+The timeout uses milliseconds.
+Workers report in their own panes for the boss to read.
+Use the [skill](skills/herdr-shepherd/SKILL.md) for the complete procedure, including replies to the boss.
 
 Communication uses terminal input and output.
-The package does not provide a message queue, delivery acknowledgements, or a complete transcript.
-An idle state alone does not prove task completion.
-Read the result and check that it answers the task.
-Team names identify related sessions; they do not restrict access to other sessions.
+It does not provide a message queue, delivery acknowledgements, or a complete transcript.
+An idle status alone does not prove task completion.
+Read the result.
+Check that it answers the task.
+Team names group sessions; they do not restrict access to other sessions.
 
-## Check the package
+## Installation details
+
+The compiled commands require herdr and the selected agent commands.
+They do not require Rust, Bash, or Python at runtime.
+Git is optional; the viewer uses it to display repository names.
+
+A full installation creates these links:
+
+| Path | Purpose |
+| --- | --- |
+| `~/.local/bin/herdr-shepherd` | Open, join, or inspect a team. |
+| `~/.local/bin/herd-boss` | Use the previous launcher name. |
+| `~/.local/bin/herd-view` | Show registered sessions. |
+| `~/.claude/skills/herdr-shepherd` | Register the Claude Code skill. |
+| `~/.agents/skills/herdr-shepherd` | Register the Codex skill. |
+
+The installer preserves existing files and conflicting links.
+It does not download dependencies, start herdr, or change shell configuration.
+Keep the checkout at its installed location because the links point to it.
+Start a new agent session to discover the installed skill.
+
+Check a full installation or install an existing build without Cargo:
+
+```sh
+./bin/herdr-shepherd --install check
+./bin/herdr-shepherd --install
+```
+
+### Keep existing command aliases
+
+If `herd-boss` or `herd-view` already belongs to another setup, link only the new command.
+From the repository folder:
+
+```sh
+mkdir -p "$HOME/.local/bin"
+ln -s "$PWD/bin/herdr-shepherd" "$HOME/.local/bin/herdr-shepherd"
+export PATH="$HOME/.local/bin:$PATH"
+herdr-shepherd --version
+```
+
+This keeps the existing aliases and does not register global skill links.
+New teams still receive the bundled skill's exact path.
+The link command refuses to replace an existing command.
+To keep the command available in new terminals, add the PATH line to your shell configuration if necessary.
+
+## Development and validation
+
+The project targets macOS and Linux.
+The current Rust build passes automated tests on macOS Apple Silicon.
+Linux and complete live-agent workflows still require validation.
+The tests use temporary folders and agent stubs.
+Python 3.9 or later is required only for the compatibility tests.
 
 ```sh
 cargo fmt --check
@@ -210,13 +235,13 @@ cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
 cargo build --release --locked
 python3 -m unittest discover -s tests -v
-./bin/herdr-shepherd --help
-./bin/herdr-shepherd --version
 ```
 
-The tests use temporary folders and agent stubs.
-They do not require an agent account or a running herdr server.
-The compatibility tests also check registration locks shared with the previous Python implementation.
-Git is optional at runtime; `herd-view` uses it only to display repository names.
+Build the binary before running `./bin/herdr-shepherd` from a source checkout.
+For a compiled package, keep the binary at `bin/herdr-shepherd` and the skill under `skills/herdr-shepherd`.
+Keep the alias links beside the binary.
+Build a separate binary for each operating system and processor architecture.
 
-The project uses the [MIT license](LICENSE).
+## License
+
+[MIT](LICENSE).
