@@ -179,7 +179,7 @@ Team names group sessions; they do not restrict access to other sessions.
 ## Installation details
 
 The compiled commands require herdr and the selected agent commands.
-They do not require Rust, Bash, or Python at runtime.
+They do not require the Rust toolchain at runtime.
 Git is optional; the viewer uses it to display repository names.
 
 A full installation creates these links:
@@ -227,14 +227,14 @@ The project targets macOS and Linux.
 The current Rust build passes automated tests on macOS Apple Silicon.
 Linux and complete live-agent workflows still require validation.
 The tests use temporary folders and agent stubs.
-Python 3.9 or later is required only for the compatibility tests.
+The unit tests, integration tests, fake commands, and terminal supervisor all use Rust.
+Run `cargo test` to check the complete suite.
 
 ```sh
 cargo fmt --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
 cargo build --release --locked
-python3 -m unittest discover -s tests -v
 ```
 
 Build the binary before running `./bin/herdr-shepherd` from a source checkout.
