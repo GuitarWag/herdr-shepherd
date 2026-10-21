@@ -39,6 +39,9 @@ log = Path(os.environ['HERD_TEST_LOG'])
 calls = log.read_text().splitlines() if log.exists() else []
 with log.open('a') as stream:
     stream.write(json.dumps(args) + '\\n')
+if os.environ.get('HERD_TEST_OFFLINE'):
+    print('socket unavailable', file=sys.stderr)
+    sys.exit(1)
 if os.environ.get('HERD_TEST_ERROR') == ' '.join(args[:2]):
     print(json.dumps({'error': {'message': 'requested operation failed'}}))
     sys.exit(0)
@@ -439,6 +442,26 @@ sys.exit(int(os.environ.get('HERD_AGENT_EXIT', '0')))
                 result = self.run_launcher("test", "--workers", "0")
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertTrue(any(call[:2] == ["pane", "send-keys"] for call in self.calls()))
+
+    def test_viewer_uses_agent_type_for_names_without_a_team_role(self):
+        self.team()
+        agents = json.loads(self.agents.read_text())
+        agents.append(dict(agents[0], name="api-review", pane_id="unrelated-pane"))
+        self.agents.write_text(json.dumps(agents))
+        result = subprocess.run([sys.executable, str(ROOT / "bin/herd-view"), "--json"], env=self.env,
+                                text=True, capture_output=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        member = next(member for group in json.loads(result.stdout) for member in group["members"]
+                      if member["name"] == "api-review")
+        self.assertEqual(member["role"], "codex")
+
+    def test_team_list_explains_unreachable_server(self):
+        self.env["HERD_TEST_OFFLINE"] = "1"
+        result = self.run_launcher("test", "--team")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Check that the herdr server is running", result.stderr)
+        self.assertIn("socket unavailable", result.stderr)
+        self.assertEqual(result.stdout, "")
 
 
 if __name__ == "__main__":

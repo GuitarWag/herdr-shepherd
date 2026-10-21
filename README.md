@@ -19,6 +19,7 @@ The default agents are Claude Code.
 Claude Code uses `fable` for the boss and `opus` for workers.
 Codex uses `gpt-6-astra` for the boss and `gpt-6.1-sol` for workers.
 Use `--boss-model`, `--worker-model`, or `--model` when your account needs different models.
+If a pane reports a model error, select an available model with the option for that role.
 A worker model override applies to all worker types.
 Select models that each selected agent type supports.
 
