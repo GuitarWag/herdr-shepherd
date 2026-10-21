@@ -1,11 +1,12 @@
 mod cli;
 mod install;
+mod interactive;
 mod join;
 mod process;
 mod view;
 
 use serde_json::Value;
-use std::{env, path::PathBuf};
+use std::{env, io::IsTerminal, path::PathBuf};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -42,6 +43,25 @@ fn package_root() -> Result<PathBuf> {
 fn run(args: &[String], viewer: bool) -> Result<()> {
     if viewer {
         return view::run(args);
+    }
+    if args.is_empty() && std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
+        return interactive::run(false);
+    }
+    if args.iter().any(|arg| arg == "--interactive") {
+        if args
+            .iter()
+            .any(|arg| matches!(arg.as_str(), "-h" | "--help"))
+        {
+            cli::parse(&["--help".into()])?;
+            return Ok(());
+        }
+        if args
+            .iter()
+            .any(|arg| !matches!(arg.as_str(), "--interactive" | "--dry-run"))
+        {
+            return Err("usage: herdr-shepherd --interactive [--dry-run]".into());
+        }
+        return interactive::run(args.iter().any(|arg| arg == "--dry-run"));
     }
     if args.first().map(String::as_str) == Some("--install") {
         return install::run(&args[1..]);

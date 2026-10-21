@@ -4,6 +4,8 @@ import fcntl
 import hashlib
 import json
 import os
+import pty
+import select
 from pathlib import Path
 import shlex
 import subprocess
@@ -99,9 +101,84 @@ sys.exit(int(os.environ.get('HERD_AGENT_EXIT', '0')))
         path.write_text(text)
         path.chmod(0o755)
 
-    def run_launcher(self, *args, launcher=LAUNCHER):
+    def run_launcher(self, *args, launcher=LAUNCHER, input=None):
         return subprocess.run([str(launcher), *args], env=self.env,
-                              cwd=self.root, text=True, capture_output=True, timeout=10)
+                              cwd=self.root, text=True, capture_output=True, input=input, timeout=10)
+
+    def test_interactive_defaults_preview_without_external_commands(self):
+        self.env["PATH"] = str(self.root / "empty-path")
+        result = self.run_launcher("--interactive", "--dry-run", input="\n" * 5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Command: herdr-shepherd my-task", result.stdout)
+        self.assertIn("--boss-agent claude --worker-agent claude --workers 3", result.stdout)
+        self.assertIn("--model fable", result.stdout)
+        self.assertIn("--model opus", result.stdout)
+        self.assertEqual(self.calls(), [])
+
+    def test_interactive_choices_use_the_existing_launch_path(self):
+        folder = self.root / "project 'with' spaces"
+        folder.mkdir()
+        result = self.run_launcher("--interactive", input=f"interactive-test\n{folder}\n2\nclaude\n1\ny\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        launches = self.launches()
+        self.assertEqual([args[0] for args in launches], ["codex", "claude"])
+        self.assertEqual([args[args.index("--model") + 1] for args in launches], ["gpt-6-astra", "opus"])
+        for call in self.calls():
+            if "--cwd" in call:
+                self.assertEqual(call[call.index("--cwd") + 1], str(folder))
+
+    def test_interactive_expands_home_and_allows_zero_workers(self):
+        folder = self.root / "project"
+        folder.mkdir()
+        self.env["HOME"] = str(self.root)
+        result = self.run_launcher("--interactive", "--dry-run", input="\n~/project\ncodex\n2\n0\n")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        command = next(line.removeprefix("Command: ") for line in result.stdout.splitlines()
+                       if line.startswith("Command: "))
+        args = shlex.split(command)
+        self.assertEqual(args[args.index("--cwd") + 1], str(folder))
+        self.assertEqual(args[args.index("--workers") + 1], "0")
+        self.assertEqual(result.stdout.count("pane send-text"), 1)
+        self.assertEqual(self.calls(), [])
+
+    def test_interactive_help_does_not_prompt(self):
+        result = self.run_launcher("--interactive", "-h", input="")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("--interactive [--dry-run]", result.stdout)
+        self.assertNotIn("Task name [", result.stdout)
+        self.assertEqual(self.calls(), [])
+
+    def test_interactive_cancel_eof_and_conflicting_options_create_no_panes(self):
+        for args, answer, expected in [
+            (["--interactive"], "\n" * 5 + "n\n", 0),
+            (["--interactive"], "", 2),
+            (["--interactive"], "task\n", 2),
+            (["--interactive", "--team"], "", 2),
+            (["task", "--interactive"], "", 2),
+        ]:
+            with self.subTest(args=args, answer=answer):
+                result = self.run_launcher(*args, input=answer)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                self.assertEqual(self.calls(), [])
+
+    def test_no_arguments_open_interactive_setup_in_a_terminal(self):
+        master, slave = pty.openpty()
+        try:
+            with subprocess.Popen([str(LAUNCHER)], cwd=self.root, env=self.env,
+                                  stdin=slave, stdout=slave, stderr=slave) as process:
+                os.write(master, b"\n\n\n\n\nn\n")
+                process.wait(timeout=5)
+                self.assertEqual(process.returncode, 0)
+                chunks = []
+                while select.select([master], [], [], 0.1)[0]:
+                    chunks.append(os.read(master, 8192))
+                output = b"".join(chunks).decode()
+                self.assertIn("Set up a herdr-shepherd team.", output)
+                self.assertIn("Setup cancelled.", output)
+        finally:
+            os.close(master)
+            os.close(slave)
+        self.assertEqual(self.calls(), [])
 
     def calls(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []

@@ -12,6 +12,18 @@ This package does not create or manage Git worktrees.
 
 ## Open a herd
 
+For a user who wants prompts, run `herdr-shepherd` without arguments in a terminal.
+Use `herdr-shepherd --interactive` to select the setup explicitly.
+The setup asks for the task name, working folder, boss agent, worker agent, and worker count.
+Press Enter to use each default.
+The defaults are `my-task`, the current folder, Claude Code for both roles, and three workers.
+Enter `claude` or `1` for Claude Code.
+Enter `codex` or `2` for Codex.
+The selected worker agent applies to every worker.
+The setup shows the command before the user confirms it.
+Use `herdr-shepherd --interactive --dry-run` to preview commands without creating a team.
+Agents should use explicit command options for automated tasks.
+
 ```sh
 herdr-shepherd my-task --cwd /path/to/project --boss-agent codex --worker-agent claude --worker-agent codex
 ```
@@ -27,10 +39,14 @@ One `--worker-agent` applies to every worker selected by `--workers N`.
 Multiple `--worker-agent` entries define the worker order and count.
 An explicit worker count must match a list with multiple entries.
 Both roles default to Claude Code when the user omits the agent options.
+The default worker count is three when multiple agent entries do not define the count.
+Use `--workers 0` to start only a boss.
+Use `--dry-run` to preview a launch without creating panes.
 
 Claude Code defaults to `fable` for the boss and `opus` for workers.
 Codex defaults to `gpt-6-astra` for the boss and `gpt-6.1-sol` for workers.
 Use `--boss-model` or `--worker-model` to override the model for that role.
+Use `--model` to override the models for both roles.
 The worker model override applies to every worker, including different agent types.
 Use model overrides with agent types that support the selected model.
 

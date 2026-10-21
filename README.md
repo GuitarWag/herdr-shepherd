@@ -92,6 +92,33 @@ The compiled package can move before installation; it contains no fixed source p
 
 ## Open a team
 
+Run the command without arguments in a terminal to open the interactive setup:
+
+```sh
+herdr-shepherd
+```
+
+The setup asks for the task name, working folder, boss agent, worker agent, and worker count.
+Press Enter to accept each default.
+The defaults are `my-task`, the current folder, Claude Code for both roles, and three workers.
+Enter `1` for Claude Code or `2` for Codex at each agent prompt.
+You can also enter `claude` or `codex`.
+The selected worker agent applies to every worker.
+The folder prompt accepts relative paths, absolute paths, and `~`.
+The setup shows the command and asks before it creates the team.
+Press Ctrl+C to cancel, or enter `n` at the final prompt.
+
+You can select the interactive setup explicitly or preview it without creating a team:
+
+```sh
+herdr-shepherd --interactive
+herdr-shepherd --interactive --dry-run
+```
+
+`--interactive` accepts only `--dry-run`.
+Without arguments, the command opens the setup only when its input and output use a terminal.
+The existing command options remain available for scripts and mixed worker types.
+
 Start a Codex boss and one Codex worker:
 
 ```sh

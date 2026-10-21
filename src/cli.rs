@@ -2,6 +2,11 @@ use crate::{Result, package_root, process, string};
 use std::{env, path::PathBuf, thread, time::Duration};
 
 const HELP: &str = "usage: herdr-shepherd <task> [options]
+       herdr-shepherd
+       herdr-shepherd --interactive [--dry-run]
+       herdr-shepherd --install [check]
+  -h, --help                     Show this help.
+  --interactive                  Prompt for a new team. Also runs with no arguments in a terminal.
   --add-worker                   Use the current herdr pane as a worker.
   --team                         Show the team across tabs.
   --json                         Use JSON with --team.
@@ -18,6 +23,8 @@ const HELP: &str = "usage: herdr-shepherd <task> [options]
 
 One --worker-agent applies to all workers. Multiple entries define each worker.
 An explicit worker count must match a list with multiple entries.
+--team accepts only --json. --add-worker rejects boss options and --workers.
+Running agents cannot change their model, folder, or agent type when they join.
 Claude defaults: fable for the boss, opus for workers.
 Codex defaults: gpt-6-astra for the boss, gpt-6.1-sol for workers.";
 
@@ -47,6 +54,25 @@ pub fn agent(value: &str) -> Result<()> {
     } else {
         Err(format!("unsupported agent: {value}").into())
     }
+}
+
+pub fn task_name(value: &str) -> Result<()> {
+    if value.is_empty()
+        || value.starts_with('-')
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+    {
+        return Err("The task name accepts letters, digits, dot, dash and underscore.".into());
+    }
+    Ok(())
+}
+
+pub fn worker_count(value: &str) -> Result<usize> {
+    if value.is_empty() || value.len() > 4 || !value.bytes().all(|b| b.is_ascii_digit()) {
+        return Err("--workers accepts a whole number from 0 through 9999".into());
+    }
+    Ok(value.parse()?)
 }
 
 pub fn parse(args: &[String]) -> Result<Option<Options>> {
@@ -125,13 +151,7 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
     if options.task.is_empty() {
         return Err(HELP.into());
     }
-    if !options
-        .task
-        .bytes()
-        .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
-    {
-        return Err("the task name accepts letters, digits, dot, dash and underscore".into());
-    }
+    task_name(&options.task)?;
     if !options.cwd.is_dir() {
         return Err(format!("no such directory: {}", options.cwd.display()).into());
     }
@@ -158,11 +178,7 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
         }
         Operation::Create => {
             let count = if let Some(value) = workers {
-                if value.is_empty() || value.len() > 4 || !value.bytes().all(|b| b.is_ascii_digit())
-                {
-                    return Err("--workers accepts a whole number from 0 through 9999".into());
-                }
-                value.parse::<usize>()?
+                worker_count(&value)?
             } else if options.worker_agents.len() > 1 {
                 options.worker_agents.len()
             } else {
