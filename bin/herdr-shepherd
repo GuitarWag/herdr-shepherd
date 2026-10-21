@@ -1,0 +1,240 @@
+#!/bin/bash
+# Open a boss and workers in one herdr tab.
+set -euo pipefail
+
+usage() {
+  cat <<'TXT'
+usage: herdr-shepherd <task> [options]
+  --add-worker                   Use the current herdr pane as a worker.
+  --team                         Show the team across tabs.
+  --json                         Use JSON with --team.
+  --boss-agent claude|codex       Default: claude.
+  --worker-agent claude|codex     Repeat for an ordered list of workers.
+  --workers N                    0 through 9999. Default: 3, or the worker list length.
+  --cwd PATH                     Default: the current directory.
+  --boss-model M                 Override the boss model.
+  --worker-model M               Override every worker model.
+  --model M                      Override all models.
+  --dry-run                      Print commands without creating panes.
+  --version                      Print the package version.
+
+One --worker-agent applies to all workers. Multiple entries define each worker.
+An explicit --workers count must match a list with multiple entries.
+Claude defaults: fable for the boss, opus for workers.
+Codex defaults: gpt-6-astra for the boss, gpt-6.1-sol for workers.
+TXT
+}
+die() { echo "herdr-shepherd: $*" >&2; exit 2; }
+
+task=""; workers=""; cwd="$PWD"; dry=0
+boss_agent=claude; worker_agents=()
+boss_model=""; worker_model=""
+operation=create; json=0; create_options=0; worker_options=0; change_directory=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --workers|--cwd|--boss-agent|--worker-agent|--boss-model|--worker-model|--model)
+      [ $# -ge 2 ] && [ -n "$2" ] && [[ "$2" != --* ]] || die "$1 requires a value"
+      case "$1" in
+        --workers|--boss-agent|--boss-model) create_options=1 ;;
+        --cwd) change_directory=1 ;;
+        --worker-agent|--worker-model|--model) worker_options=1 ;;
+      esac
+      case "$1" in
+        --workers) workers="$2" ;;
+        --cwd) cwd="$2" ;;
+        --boss-agent) boss_agent="$2" ;;
+        --worker-agent) worker_agents+=("$2") ;;
+        --boss-model) boss_model="$2" ;;
+        --worker-model) worker_model="$2" ;;
+        --model) boss_model="$2"; worker_model="$2" ;;
+      esac
+      shift 2 ;;
+    --add-worker|--team)
+      [ "$operation" = create ] || die "select one of --add-worker and --team"
+      if [ "$1" = --add-worker ]; then operation='join'; else operation=team; fi
+      shift ;;
+    --json) json=1; shift ;;
+    --dry-run) dry=1; shift ;;
+    --version) echo 'herdr-shepherd 0.1.0'; exit 0 ;;
+    -h|--help) usage; exit 0 ;;
+    -*) die "unknown option: $1" ;;
+    *) [ -z "$task" ] || die "supply one task name"; task="$1"; shift ;;
+  esac
+done
+[ -n "$task" ] || { usage >&2; exit 2; }
+[[ "$task" =~ ^[A-Za-z0-9._-]+$ ]] || die "the task name accepts letters, digits, dot, dash and underscore"
+[ -d "$cwd" ] || die "no such directory: $cwd"
+
+command -v python3 >/dev/null || die "python3 is not on PATH"
+# Resolve the launcher link so the resource paths also work from ~/.local/bin.
+root=$(python3 -c 'from pathlib import Path; import sys; print(Path(sys.argv[1]).resolve().parent.parent)' "$0")
+skill="$root/skills/herdr-shepherd/SKILL.md"
+[ -f "$skill" ] || die "the herdr-shepherd skill is missing: $skill"
+[ "$json" -eq 0 ] || [ "$operation" = team ] || die "--json requires --team"
+if [ "$operation" = team ]; then
+  [ "$create_options$worker_options$change_directory$dry" = 0000 ] || die "--team accepts only --json"
+  if [ "$json" -eq 1 ]; then
+    exec python3 "$root/bin/herd-view" --subject "$task" --json
+  fi
+  exec python3 "$root/bin/herd-view" --subject "$task"
+fi
+
+run() {
+  if [ "$dry" -eq 1 ]; then
+    printf '  herdr'; printf ' %q' "$@"; printf '\n'
+  else
+    herdr "$@" | field >/dev/null
+  fi
+}
+launch() {
+  local pane="$1" agent="$2" name="$3" model="$4" prompt command
+  local argv=("$agent")
+  if [ "$agent" = claude ]; then
+    argv+=(--name "$name")
+    if [ -z "$model" ]; then
+      if [ "$name" = "$task-boss" ]; then model=fable; else model=opus; fi
+    fi
+  else
+    argv+=(--approve-for-me)
+    if [ -z "$model" ]; then
+      if [ "$name" = "$task-boss" ]; then model=gpt-6-astra; else model=gpt-6.1-sol; fi
+    fi
+  fi
+  [ -z "$model" ] || argv+=(--model "$model")
+  prompt="Read the herdr-shepherd skill at $skill. You are $name."
+  if [ "$name" = "$task-boss" ]; then
+    prompt+=" You are the boss for $task with $workers workers named $task-wN. Wait for the user's task."
+  else
+    prompt+=" Your boss is $task-boss. Wait for a task. Report results in this pane for the boss to read."
+  fi
+  argv+=("$prompt")
+  if [ "$operation" = join ]; then
+    if [ "$current_agent" != - ]; then
+      printf '%s\n' "$prompt"
+    elif [ "$dry" -eq 1 ]; then
+      printf '  '; printf '%q ' "${argv[@]}"; printf '\n'
+    else
+      cd "$cwd"
+      exec "${argv[@]}"
+    fi
+    return
+  fi
+  # Quote each argument because the pane shell executes this command.
+  printf -v command '%q ' "${argv[@]}"
+  command=${command% }
+  if [ "$dry" -eq 0 ]; then sleep 1; fi
+  run pane send-text "$pane" "$command"
+  run pane send-keys "$pane" Enter
+}
+field() {
+  python3 -c '
+import json, sys
+try:
+    response = sys.stdin.read()
+    if not response.strip() and not sys.argv[1]:
+        sys.exit(0)
+    data = json.loads(response)
+    if "error" in data:
+        raise ValueError(data["error"]["message"])
+    result = data["result"]
+    if sys.argv[1]:
+        for key in sys.argv[1].split("."):
+            result = result[key]
+        print(result)
+except (ValueError, KeyError, TypeError) as error:
+    print(f"herdr-shepherd: {error}", file=sys.stderr)
+    sys.exit(2)
+' "${1:-}"
+}
+
+if [ "$operation" = join ]; then
+  [ "$create_options" -eq 0 ] || die "--add-worker does not accept boss options or --workers"
+  [ "${#worker_agents[@]}" -le 1 ] || die "--add-worker accepts one --worker-agent"
+  requested=${worker_agents[0]:-}
+  case "$requested" in ''|claude|codex) ;; *) die "unsupported agent: $requested" ;; esac
+  registration=$(python3 "$root/scripts/join.py" "$task" "$dry" "$requested" "$worker_model" "$change_directory" "$cwd") || exit $?
+  name=${registration%%$'\t'*}
+  current_agent=${registration#*$'\t'}
+  if [ "$dry" -eq 1 ]; then
+    echo "Dry run. The current pane becomes $name."
+  else
+    echo "Worker $name uses the current pane ${HERDR_PANE_ID}. Boss: $task-boss."
+  fi
+  launch "$HERDR_PANE_ID" "${requested:-claude}" "$name" "$worker_model"
+  exit 0
+fi
+
+count=${#worker_agents[@]}
+if [ -z "$workers" ]; then
+  workers=3
+  [ "$count" -le 1 ] || workers=$count
+fi
+case "$workers" in
+  ''|*[!0-9]*) die "--workers requires a whole number: $workers" ;;
+esac
+# Decimal conversion prevents Bash from interpreting a leading zero as octal.
+[ "${#workers}" -le 4 ] || die "--workers accepts at most four digits"
+workers=$((10#$workers))
+if [ "$count" -gt 1 ] && [ "$count" -ne "$workers" ]; then
+  die "--workers must match the number of --worker-agent entries"
+fi
+if [ "$count" -le 1 ]; then
+  agent=${worker_agents[0]:-claude}
+  worker_agents=()
+  for ((i=0; i<workers; i++)); do worker_agents+=("$agent"); done
+  case "$agent" in claude|codex) ;; *) die "unsupported agent: $agent" ;; esac
+fi
+for agent in "$boss_agent" ${worker_agents[@]+"${worker_agents[@]}"}; do
+  case "$agent" in claude|codex) ;; *) die "unsupported agent: $agent" ;; esac
+done
+
+cwd=$(cd "$cwd" && pwd)
+if [ "$dry" -eq 0 ]; then
+  for program in herdr "$boss_agent" ${worker_agents[@]+"${worker_agents[@]}"}; do
+    command -v "$program" >/dev/null || die "$program is not on PATH"
+  done
+fi
+
+
+if [ "$dry" -eq 1 ]; then
+  echo "Dry run. No panes are created."
+  run tab create --label "$task" --cwd "$cwd" --focus
+  boss='<boss>'
+else
+  boss=$(herdr tab create --label "$task" --cwd "$cwd" --focus | field root_pane.pane_id)
+fi
+run pane rename "$boss" "$task-boss"
+run agent rename "$boss" "$task-boss"
+launch "$boss" "$boss_agent" "$task-boss" "$boss_model"
+echo "boss  $boss  $boss_agent"
+
+prev="$boss"; direction=right; ratio=0.35
+for ((i=1; i<=workers; i++)); do
+  if [ "$dry" -eq 1 ]; then
+    run pane split "$prev" --direction "$direction" --ratio "$ratio" --cwd "$cwd" --no-focus
+    pane="<w$i>"
+  else
+    pane=$(herdr pane split "$prev" --direction "$direction" --ratio "$ratio" --cwd "$cwd" --no-focus | field pane.pane_id)
+  fi
+  [ -n "$pane" ] || die "the split returned no pane id for w$i"
+  run pane rename "$pane" "$task-w$i"
+  run agent rename "$pane" "$task-w$i"
+  launch "$pane" "${worker_agents[i-1]}" "$task-w$i" "$worker_model"
+  echo "w$i    $pane  ${worker_agents[i-1]}"
+  prev="$pane"; direction=down; ratio=0.5
+done
+run pane focus --direction left --pane "$prev" >/dev/null 2>&1 || true
+[ "$dry" -eq 0 ] || exit 0
+
+if [ "$workers" -eq 0 ]; then
+  echo "No workers. The boss runs $boss_agent."
+else
+  cat <<TXT
+
+Workers: $task-w1 through $task-w$workers. Use the herdr-shepherd skill to send work.
+  herdr agent send $task-w1 "your prompt"
+  herdr pane send-keys <pane_id> Enter
+  herdr agent wait $task-w1 --status idle --timeout 600000
+  herdr agent read $task-w1 --lines 80
+TXT
+fi
