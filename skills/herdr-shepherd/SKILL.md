@@ -14,13 +14,22 @@ This package does not create or manage Git worktrees.
 
 For a user who wants prompts, run `herdr-shepherd` without arguments in a terminal.
 Use `herdr-shepherd --interactive` to select the setup explicitly.
-The setup asks for the task name, working folder, boss agent, worker agent, and worker count.
-Press Enter to use each default.
+The Ratatui form shows the task name, working folder, boss agent, worker agent, and worker count.
+Use Tab or Up/Down to select a field.
+Type to replace a default.
+Use Ctrl+U to clear a field.
+Use Enter to validate and advance.
+Use Left/Right to change the selected agent.
 The defaults are `my-task`, the current folder, Claude Code for both roles, and three workers.
 Enter `claude` or `1` for Claude Code.
 Enter `codex` or `2` for Codex.
 The selected worker agent applies to every worker.
-The setup shows the command before the user confirms it.
+The form shows the command before the user confirms it.
+Press Enter on the review screen to confirm.
+Use Backspace to return from review to editing.
+Use Esc or Ctrl+C to cancel.
+The form requires at least 64 columns and 24 rows.
+Piped input and `TERM=dumb` use text prompts with the same defaults.
 Use `herdr-shepherd --interactive --dry-run` to preview commands without creating a team.
 Agents should use explicit command options for automated tasks.
 

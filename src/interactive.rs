@@ -1,7 +1,7 @@
 use crate::{Result, cli, process};
 use std::{
     env,
-    io::{self, BufRead, Write},
+    io::{self, BufRead, IsTerminal, Write},
     path::PathBuf,
 };
 
@@ -27,7 +27,7 @@ fn ask(
     }
 }
 
-fn selected_agent(value: &str) -> Result<String> {
+pub fn selected_agent(value: &str) -> Result<String> {
     let value = match value {
         "1" => "claude",
         "2" => "codex",
@@ -37,7 +37,7 @@ fn selected_agent(value: &str) -> Result<String> {
     Ok(value.to_owned())
 }
 
-fn folder(value: &str) -> Result<String> {
+pub fn folder(value: &str) -> Result<String> {
     let path = if value == "~" {
         process::home()?
     } else if let Some(relative) = value.strip_prefix("~/") {
@@ -125,7 +125,14 @@ fn setup(
 }
 
 pub fn run(dry: bool) -> Result<()> {
-    let options = setup(&mut io::stdin().lock(), &mut io::stdout().lock(), dry)?;
+    let options = if io::stdin().is_terminal()
+        && io::stdout().is_terminal()
+        && env::var("TERM").as_deref() != Ok("dumb")
+    {
+        crate::tui::setup(dry)?
+    } else {
+        setup(&mut io::stdin().lock(), &mut io::stdout().lock(), dry)?
+    };
     if let Some(options) = options {
         cli::create(&options)?;
     }

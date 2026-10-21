@@ -43,28 +43,26 @@ herdr-shepherd
 
 ## Interactive setup
 
-Press Enter to accept each default.
+The [Ratatui](https://ratatui.rs) form shows the task name, working folder, agents, worker count, and command preview.
+The defaults are `my-task`, your current folder, Claude Code for both roles, and three workers.
+
+| Key | Action |
+| --- | --- |
+| Tab, Up, Down | Select a field. |
+| Enter | Validate the field and advance. Review after the last field. |
+| Left, Right | Change the selected agent. |
+| Type | Replace a field's default, then append text. |
+| Backspace | Delete the last character. Return from review to editing. |
+| Ctrl+U | Clear the selected field. |
+| Esc, Ctrl+C | Cancel setup. |
+
 Enter `1` or `claude` for Claude Code.
 Enter `2` or `codex` for Codex.
-
-For example, select a Codex boss and one Codex worker:
-
-```text
-Task name [my-task]: my-task
-Working folder [/path/to/project]:
-Agents: 1 = Claude Code, 2 = Codex. Enter a number or command name.
-Boss agent [claude]: 2
-Worker agent [claude]: 2
-Worker count [3]: 1
-
-Command: herdr-shepherd my-task --cwd /path/to/project --boss-agent codex --worker-agent codex --workers 1
-Start this team? y/n [y]: y
-```
-
-The folder defaults to your current folder.
-It accepts relative paths, absolute paths, and `~`.
+The folder accepts relative paths, absolute paths, and `~`.
 The selected worker agent applies to every worker.
-Press Ctrl+C to cancel, or enter `n` at the final prompt.
+Press Enter on the review screen to confirm the team.
+The form restores the terminal before it starts the agents.
+The form requires at least 64 columns and 24 rows.
 
 To preview the setup without creating panes:
 
@@ -74,6 +72,8 @@ herdr-shepherd --interactive --dry-run
 
 `--interactive` accepts only `--dry-run` and help options.
 Without arguments, the command opens the setup when its input and output use a terminal.
+Piped input and terminals with `TERM=dumb` use text prompts.
+The text prompts accept blank answers for defaults and `n` to cancel at confirmation.
 Use explicit command options in scripts.
 
 ## Command options

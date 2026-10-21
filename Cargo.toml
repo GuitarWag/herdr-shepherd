@@ -8,6 +8,8 @@ license = "MIT"
 
 [dependencies]
 libc = "0.2"
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
+crossterm = "0.29"
 serde_json = "1"
 sha2 = "0.10"
 

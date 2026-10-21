@@ -3,6 +3,7 @@ mod install;
 mod interactive;
 mod join;
 mod process;
+mod tui;
 mod view;
 
 use serde_json::Value;

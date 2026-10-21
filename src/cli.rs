@@ -6,7 +6,7 @@ const HELP: &str = "usage: herdr-shepherd <task> [options]
        herdr-shepherd --interactive [--dry-run]
        herdr-shepherd --install [check]
   -h, --help                     Show this help.
-  --interactive                  Prompt for a new team. Also runs with no arguments in a terminal.
+  --interactive                  Open the terminal form. Piped input uses text prompts.
   --add-worker                   Use the current herdr pane as a worker.
   --team                         Show the team across tabs.
   --json                         Use JSON with --team.
@@ -22,6 +22,7 @@ const HELP: &str = "usage: herdr-shepherd <task> [options]
   --install [check]              Install or check the command and skill links.
 
 One --worker-agent applies to all workers. Multiple entries define each worker.
+No arguments opens the terminal form when input and output use a terminal.
 An explicit worker count must match a list with multiple entries.
 --team accepts only --json. --add-worker rejects boss options and --workers.
 Running agents cannot change their model, folder, or agent type when they join.

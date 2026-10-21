@@ -2,15 +2,18 @@
 
 import fcntl
 import hashlib
+import errno
 import json
 import os
 import pty
 import select
+import struct
 from pathlib import Path
 import shlex
 import subprocess
 import sys
 import tempfile
+import termios
 import time
 import unittest
 from support import copy_package
@@ -161,23 +164,95 @@ sys.exit(int(os.environ.get('HERD_AGENT_EXIT', '0')))
                 self.assertEqual(result.returncode, expected, result.stderr)
                 self.assertEqual(self.calls(), [])
 
-    def test_no_arguments_open_interactive_setup_in_a_terminal(self):
+    def run_terminal(self, *args, keys=b"\x1b", size=(28, 100)):
         master, slave = pty.openpty()
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", *size, 0, 0))
+        original = termios.tcgetattr(slave)
+        original[-1] = [value[0] if isinstance(value, bytes) else value for value in original[-1]]
+        process = None
         try:
-            with subprocess.Popen([str(LAUNCHER)], cwd=self.root, env=self.env,
-                                  stdin=slave, stdout=slave, stderr=slave) as process:
-                os.write(master, b"\n\n\n\n\nn\n")
-                process.wait(timeout=5)
-                self.assertEqual(process.returncode, 0)
-                chunks = []
+            wrapper = """import json, subprocess, sys, termios
+result = subprocess.run(sys.argv[1:])
+settings = termios.tcgetattr(0)
+settings[-1] = [value[0] if isinstance(value, bytes) else value for value in settings[-1]]
+print('\\nHERD_TERMIOS=' + json.dumps(settings), flush=True)
+sys.stdin.readline()
+sys.exit(result.returncode)
+"""
+            process = subprocess.Popen([sys.executable, "-c", wrapper, str(LAUNCHER), *args], cwd=self.root,
+                                       env=dict(self.env, TERM="xterm-256color"),
+                                       stdin=slave, stdout=slave, stderr=slave,
+                                       start_new_session=True,
+                                       preexec_fn=lambda: fcntl.ioctl(0, termios.TIOCSCTTY, 0))
+            output = bytearray()
+            deadline = time.monotonic() + 10
+
+            def read_output():
                 while select.select([master], [], [], 0.1)[0]:
-                    chunks.append(os.read(master, 8192))
-                output = b"".join(chunks).decode()
-                self.assertIn("Set up a herdr-shepherd team.", output)
-                self.assertIn("Setup cancelled.", output)
+                    try:
+                        chunk = os.read(master, 8192)
+                    except OSError as error:
+                        if error.errno == errno.EIO:
+                            break
+                        raise
+                    if not chunk:
+                        break
+                    output.extend(chunk)
+
+            while b"\x1b[?2004h" not in output:
+                read_output()
+                self.assertIsNone(process.poll(), output.decode(errors="replace"))
+                self.assertLess(time.monotonic(), deadline, "The form did not appear. " + repr(bytes(output)))
+            os.write(master, keys)
+            restored = False
+            while process.poll() is None:
+                read_output()
+                if not restored and b"HERD_TERMIOS=" in output:
+                    settings = bytes(output).split(b"HERD_TERMIOS=", 1)[1].splitlines()[0]
+                    self.assertEqual(json.loads(settings), original, "The terminal settings were not restored.")
+                    restored = True
+                    os.write(master, b"\n")
+                self.assertLess(time.monotonic(), deadline, "The terminal setup did not exit. " + output.decode(errors="replace")[-4000:])
+            read_output()
+            self.assertTrue(restored)
+            return process.returncode, output.decode(errors="replace")
         finally:
+            if process is not None and process.poll() is None:
+                os.killpg(process.pid, 9)
+                process.wait()
             os.close(master)
             os.close(slave)
+
+    def test_no_arguments_open_ratatui_and_cancel_restores_the_terminal(self):
+        for key in (b"\x1b", b"\x03"):
+            with self.subTest(key=key):
+                status, output = self.run_terminal(keys=key)
+                self.assertEqual(status, 0, output)
+                self.assertIn("Task", output)
+                self.assertIn("Setup cancelled.", output)
+                self.assertIn("\x1b[?1049l", output)
+                self.assertEqual(self.calls(), [])
+
+    def test_ratatui_preview_uses_choices_and_restores_the_terminal(self):
+        keys = b"tui-team\r\r\x1b[C\r\x1b[C\r0\r\r"
+        status, output = self.run_terminal("--interactive", "--dry-run", keys=keys)
+        self.assertEqual(status, 0, output)
+        self.assertIn("gpt-6-astra", output)
+        self.assertIn("tui-team-boss", output)
+        self.assertIn("\x1b[?1049l", output)
+        self.assertEqual(self.calls(), [])
+
+    def test_ratatui_restores_the_terminal_before_a_launch_error(self):
+        self.env["HERD_TEST_ERROR"] = "tab create"
+        status, output = self.run_terminal(keys=b"\r\r\r\r0\r\r")
+        self.assertEqual(status, 2, output)
+        self.assertIn("requested operation failed", output)
+        self.assertIn("\x1b[?1049l", output)
+
+    def test_small_terminal_can_cancel_without_creating_a_team(self):
+        status, output = self.run_terminal(size=(10, 40), keys=b"\r\r\x1b")
+        self.assertEqual(status, 0, output)
+        self.assertIn("Resize", output)
         self.assertEqual(self.calls(), [])
 
     def calls(self):
