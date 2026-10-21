@@ -1,13 +1,51 @@
 # herdr-shepherd
 
-Open a team of Claude Code and Codex sessions in one folder through [herdr](https://herdr.dev).
-Choose a boss and workers.
-Discover their sessions.
-Send tasks between them.
+Agent communication for Claude Code and Codex, over [herdr](https://herdr.dev).
 
-The package includes a Rust CLI and a shared [agent skill](skills/herdr-shepherd/SKILL.md).
-Bosses and workers can use different agents and models.
-The package does not create or manage Git worktrees.
+Agents discover their teammates, send tasks, check status, and read results across separate terminal sessions.
+A Codex boss can assign work to Claude Code workers.
+A Claude Code boss can assign work to Codex workers.
+Each agent keeps its own process, context, and permissions.
+
+`herdr` supplies the terminal communication commands.
+The shared [agent skill](skills/herdr-shepherd/SKILL.md) defines how bosses and workers use them to communicate.
+The Rust CLI registers the team and helps agents find their boss or workers.
+The interactive setup helps you start those sessions in a selected folder.
+
+## How agents communicate
+
+After you create a team, its agents can discover their teammates across tabs:
+
+```sh
+herdr-shepherd my-task --team --json
+```
+
+Check that the target is idle and contains no unrelated unsent prompt.
+Replace `WORKER_PANE_ID` with the pane ID from the team output:
+
+```sh
+herdr agent send my-task-w1 "Read the tests. Report the failures without editing files."
+herdr pane send-keys WORKER_PANE_ID Enter
+herdr agent wait my-task-w1 --status idle --timeout 600000
+herdr agent read my-task-w1 --lines 80
+```
+
+The boss sends a task and reads the worker's result.
+Both `send` and `Enter` are necessary.
+The timeout uses milliseconds.
+Workers report in their own panes for the boss to read.
+A worker can contact an idle boss with the same sequence when the boss requests a reply.
+Use the [skill](skills/herdr-shepherd/SKILL.md) for the complete communication procedure.
+
+Communication uses terminal input and output.
+It does not provide a message queue, delivery acknowledgements, or a complete transcript.
+An idle status alone does not prove task completion.
+Read the result.
+Check that it answers the task.
+Team names group sessions; they do not restrict access to other sessions.
+
+Warning: agents in the shared folder can overwrite each other's changes.
+Assign separate files to editing workers, or use one editing worker at a time.
 
 ## Quick start
 
@@ -149,38 +187,12 @@ herdr-shepherd my-task --team --json
 JSON includes each member's name, role, agent type, status, pane ID, and folder.
 Use `herd-view --watch` to inspect all registered sessions after a full installation.
 
-## Send tasks and read results
-
-Warning: agents in the shared folder can overwrite each other's changes.
-Assign separate files to editing workers, or use one editing worker at a time.
-
-Check that the target is idle and contains no unrelated unsent prompt.
-Replace `WORKER_PANE_ID` with the pane ID from the team output:
-
-```sh
-herdr agent send my-task-w1 "Read the tests. Report the failures without editing files."
-herdr pane send-keys WORKER_PANE_ID Enter
-herdr agent wait my-task-w1 --status idle --timeout 600000
-herdr agent read my-task-w1 --lines 80
-```
-
-Both `send` and `Enter` are necessary.
-The timeout uses milliseconds.
-Workers report in their own panes for the boss to read.
-Use the [skill](skills/herdr-shepherd/SKILL.md) for the complete procedure, including replies to the boss.
-
-Communication uses terminal input and output.
-It does not provide a message queue, delivery acknowledgements, or a complete transcript.
-An idle status alone does not prove task completion.
-Read the result.
-Check that it answers the task.
-Team names group sessions; they do not restrict access to other sessions.
-
 ## Installation details
 
 The compiled commands require herdr and the selected agent commands.
 They do not require the Rust toolchain at runtime.
 Git is optional; the viewer uses it to display repository names.
+The package does not create or manage Git worktrees.
 
 A full installation creates these links:
 
