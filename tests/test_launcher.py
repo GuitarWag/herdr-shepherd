@@ -1,14 +1,17 @@
 """Test mixed launches without starting agent processes or a herdr server."""
 
+import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
 import shlex
-import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
+from support import copy_package
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -76,6 +79,10 @@ elif args[:2] == ['tab', 'list']:
     result = {'tabs': []}
 else:
     result = {}
+if os.environ.get('HERD_TEST_INVALID_PANE') == ' '.join(args[:2]):
+    for value in result.values():
+        if isinstance(value, dict) and 'pane_id' in value:
+            value['pane_id'] = ''
 print(json.dumps({'result': result}))
 """)
         for name in ["claude", "codex"]:
@@ -93,7 +100,7 @@ sys.exit(int(os.environ.get('HERD_AGENT_EXIT', '0')))
         path.chmod(0o755)
 
     def run_launcher(self, *args, launcher=LAUNCHER):
-        return subprocess.run(["bash", str(launcher), *args], env=self.env,
+        return subprocess.run([str(launcher), *args], env=self.env,
                               cwd=self.root, text=True, capture_output=True, timeout=10)
 
     def calls(self):
@@ -189,6 +196,7 @@ sys.exit(int(os.environ.get('HERD_AGENT_EXIT', '0')))
     def test_invalid_arguments_create_no_panes(self):
         cases = [[], ["test", "--boss-agent", "other"], ["test", "--worker-agent", "other"],
                  ["test", "--workers", "-1"], ["test", "--workers", "text"],
+                 ["test", "--workers", "10000"],
                  ["test", "--cwd", str(self.root / "missing")], ["test", "--unknown"],
                  ["test", "--boss-model"], ["test", "--cwd", "--dry-run"],
                  ["test; echo unsafe"], ["test", "another-task"],
@@ -232,7 +240,7 @@ sys.exit(int(os.environ.get('HERD_AGENT_EXIT', '0')))
     def test_dry_run_needs_no_agent_or_herdr_binary(self):
         for name in ["herdr", "claude", "codex"]:
             (self.bin / name).unlink()
-        self.env["PATH"] = f"{self.bin}:/usr/bin:/bin"
+        self.env["PATH"] = str(self.root / "empty-path")
         result = self.run_launcher("test", "--boss-agent", "codex", "--dry-run")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.calls(), [])
@@ -352,7 +360,7 @@ sys.exit(int(os.environ.get('HERD_AGENT_EXIT', '0')))
         self.team()
         panes = {f"join-{number}": {"pane_id": f"join-{number}"} for number in range(3)}
         self.panes.write_text(json.dumps(panes))
-        processes = [subprocess.Popen(["bash", str(LAUNCHER), "test", "--add-worker"], cwd=self.root,
+        processes = [subprocess.Popen([str(LAUNCHER), "test", "--add-worker"], cwd=self.root,
                                       env=dict(self.env, HERDR_PANE_ID=pane), stdout=subprocess.PIPE,
                                       stderr=subprocess.PIPE, text=True) for pane in panes]
         for process in processes:
@@ -361,9 +369,43 @@ sys.exit(int(os.environ.get('HERD_AGENT_EXIT', '0')))
         names = {agent.get("name") for agent in json.loads(self.agents.read_text())}
         self.assertTrue({"test-w4", "test-w5", "test-w6"}.issubset(names))
 
+    def registration_lock_path(self):
+        key = self.env.get("HERDR_SOCKET_PATH", "") + "\0test"
+        digest = hashlib.sha256(key.encode()).hexdigest()
+        return self.root / f"herd-join-{os.getuid()}-{digest}.lock"
+
+    def test_join_waits_for_the_previous_python_launcher_lock(self):
+        self.team(current_agent="codex")
+        with self.registration_lock_path().open("w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            with subprocess.Popen([str(LAUNCHER), "test", "--add-worker"], cwd=self.root,
+                                  env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                  text=True) as process:
+                try:
+                    time.sleep(0.2)
+                    status = process.poll()
+                    calls = self.calls()
+                finally:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
+                stdout, stderr = process.communicate(timeout=10)
+                self.assertIsNone(status)
+                self.assertEqual(calls, [])
+                self.assertEqual(process.returncode, 0, stderr)
+                self.assertIn("test-w4", stdout)
+
+    def test_join_rejects_a_symlink_at_the_lock_path(self):
+        self.team()
+        target = self.root / "preserved-file"
+        target.write_text("keep this file")
+        self.registration_lock_path().symlink_to(target)
+        result = self.run_launcher("test", "--add-worker")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(target.read_text(), "keep this file")
+
     def test_relocated_package_runs_without_personal_configuration(self):
         checkout = self.root / "standalone checkout"
-        shutil.copytree(ROOT, checkout, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+        copy_package(ROOT, checkout)
         (self.bin / "python3").symlink_to(sys.executable)
         self.env = {key: value for key, value in self.env.items() if key.startswith("HERD_TEST_")}
         self.env.update(PATH=f"{self.bin}:/usr/bin:/bin", HOME=str(self.root / "empty-home"))
@@ -416,6 +458,16 @@ sys.exit(int(os.environ.get('HERD_AGENT_EXIT', '0')))
                 self.assertIn("requested operation failed", result.stderr)
                 self.assertFalse(any(call[:2] == ["pane", "send-keys"] for call in self.calls()))
 
+    def test_empty_pane_ids_stop_launch_before_targeting_another_pane(self):
+        for operation in ("tab create", "pane split"):
+            with self.subTest(operation=operation):
+                self.log.unlink(missing_ok=True)
+                self.env["HERD_TEST_INVALID_PANE"] = operation
+                result = self.run_launcher("test", "--workers", "1")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("pane_id", result.stderr)
+                self.assertFalse(any("" in call for call in self.calls()))
+
     def test_team_list_excludes_names_without_a_team_role(self):
         self.team()
         agents = json.loads(self.agents.read_text())
@@ -448,7 +500,7 @@ sys.exit(int(os.environ.get('HERD_AGENT_EXIT', '0')))
         agents = json.loads(self.agents.read_text())
         agents.append(dict(agents[0], name="api-review", pane_id="unrelated-pane"))
         self.agents.write_text(json.dumps(agents))
-        result = subprocess.run([sys.executable, str(ROOT / "bin/herd-view"), "--json"], env=self.env,
+        result = subprocess.run([str(ROOT / "bin/herd-view"), "--json"], env=self.env,
                                 text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         member = next(member for group in json.loads(result.stdout) for member in group["members"]

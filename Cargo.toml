@@ -1,0 +1,16 @@
+[package]
+name = "herdr-shepherd"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+description = "Coordinate Claude Code and Codex sessions through herdr."
+license = "MIT"
+
+[dependencies]
+libc = "0.2"
+serde_json = "1"
+sha2 = "0.10"
+
+[profile.release]
+strip = true
+lto = "thin"

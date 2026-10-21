@@ -4,7 +4,7 @@ An independent tool for [herdr](https://herdr.dev).
 Open Claude Code and Codex teams in a selected folder.
 Let the agents discover their team, send tasks, and read results.
 
-The package includes its CLI scripts, agent skill, installer, and tests.
+The package includes a Rust CLI, agent skill, installer, and tests.
 It does not require Ghostty, dotfiles, another repository, or a personal skill installer.
 It does not create or manage Git worktrees.
 
@@ -12,8 +12,11 @@ It does not create or manage Git worktrees.
 
 - macOS or Linux.
 - herdr 0.7.3 or later. Version 0.7.3 is the initial supported version.
-- Bash and Python 3.9 or later.
 - Claude Code, Codex, or both, with authentication complete.
+
+The compiled commands do not require Rust, Bash, or Python.
+Source builds require [Rust](https://www.rust-lang.org/tools/install) 1.89 or later and a C linker.
+Python 3.9 or later is required only for the compatibility tests.
 
 The default agents are Claude Code.
 Claude Code uses `fable` for the boss and `opus` for workers.
@@ -31,13 +34,30 @@ The agent can request approved access to the herdr socket when its sandbox block
 
 Warning: starting the herdr server inside an agent can pass environment variables that break Claude sessions.
 Start herdr from a normal terminal.
-The installer does not start the server or download dependencies.
+The native installer does not start the server or download dependencies.
 
-From this repository:
+From this repository, build the binary and install the command links:
 
 ```sh
+cargo build --release --locked
 ./install.sh
 ./install.sh check
+```
+
+Cargo downloads the Rust dependencies on the first build.
+The install script uses the existing binary and does not build or download files.
+To build without installing links:
+
+```sh
+cargo build --release --locked
+./bin/herdr-shepherd --version
+```
+
+To install an existing build without Cargo:
+
+```sh
+./bin/herdr-shepherd --install
+./bin/herdr-shepherd --install check
 ```
 
 The installer checks dependencies and creates these links:
@@ -64,7 +84,11 @@ Moving or deleting it breaks the links.
 Start a new agent session to discover the installed skill.
 The launcher also gives every new agent the exact skill path.
 
-You can run `./bin/herdr-shepherd` without installing links.
+After a build, you can run `./bin/herdr-shepherd` without installing links.
+The three commands use the same compiled binary.
+For distribution, copy the binary to `bin/herdr-shepherd` and keep the `skills` directory beside `bin`.
+Keep `herd-boss` and `herd-view` as links to `herdr-shepherd` in `bin`.
+The compiled package can move before installation; it contains no fixed source path.
 
 ## Open a team
 
@@ -154,6 +178,10 @@ Team names identify related sessions; they do not restrict access to other sessi
 ## Check the package
 
 ```sh
+cargo fmt --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked
+cargo build --release --locked
 python3 -m unittest discover -s tests -v
 ./bin/herdr-shepherd --help
 ./bin/herdr-shepherd --version
@@ -161,6 +189,7 @@ python3 -m unittest discover -s tests -v
 
 The tests use temporary folders and agent stubs.
 They do not require an agent account or a running herdr server.
+The compatibility tests also check registration locks shared with the previous Python implementation.
 Git is optional at runtime; `herd-view` uses it only to display repository names.
 
 The project uses the [MIT license](LICENSE).

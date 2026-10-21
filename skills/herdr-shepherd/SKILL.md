@@ -174,7 +174,9 @@ Use this command when the user asks to control a worker.
 
 ## Dependencies and limits
 
-The package needs herdr, Bash, Python 3.9 or later, and the selected agent commands.
+The compiled package needs herdr and the selected agent commands.
+Rust 1.89 or later is required only to build from source.
+Keep the bundled skill with the binary when you move the package.
 It does not need Ghostty or personal terminal configuration.
 
 Warning: a server that inherits `CLAUDE_CODE_CHILD_SESSION=1` can break Claude sessions.

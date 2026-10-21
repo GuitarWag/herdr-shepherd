@@ -1,12 +1,11 @@
 """Test installation in temporary homes without personal configuration."""
 
 from pathlib import Path
-import shutil
 import shlex
 import subprocess
-import sys
 import tempfile
 import unittest
+from support import copy_package
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -21,10 +20,9 @@ class InstallTests(unittest.TestCase):
         self.home.mkdir()
         self.bin = self.root / "dependencies"
         self.bin.mkdir()
-        (self.bin / "python3").symlink_to(sys.executable)
         self.command("herdr", "#!/bin/sh\necho 'herdr 0.7.3'\n")
         self.command("codex", "#!/bin/sh\nexit 0\n")
-        self.env = {"HOME": str(self.home), "PATH": f"{self.bin}:/usr/bin:/bin"}
+        self.env = {"HOME": str(self.home), "PATH": str(self.bin)}
 
     def command(self, name, content):
         path = self.bin / name
@@ -32,7 +30,7 @@ class InstallTests(unittest.TestCase):
         path.chmod(0o755)
 
     def install(self, *args, checkout=ROOT):
-        return subprocess.run(["/bin/sh", str(checkout / "install.sh"), *args], cwd=self.home,
+        return subprocess.run([str(checkout / "bin/herdr-shepherd"), "--install", *args], cwd=self.home,
                               env=self.env, text=True, capture_output=True, timeout=10)
 
     def test_install_is_repeatable_and_registers_both_agents(self):
@@ -100,7 +98,7 @@ class InstallTests(unittest.TestCase):
 
     def test_relocated_checkout_installs_and_runs_without_original_paths(self):
         checkout = self.root / "standalone checkout"
-        shutil.copytree(ROOT, checkout, ignore=shutil.ignore_patterns(".git", "__pycache__"))
+        copy_package(ROOT, checkout)
         result = self.install(checkout=checkout)
         self.assertEqual(result.returncode, 0, result.stderr)
         launcher = self.home / ".local/bin/herdr-shepherd"
