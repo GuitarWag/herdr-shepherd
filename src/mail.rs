@@ -9,6 +9,7 @@ use std::{
 const KEEP: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 fn folder(task: &str) -> Result<PathBuf> {
+    crate::cli::task_name(task)?;
     Ok(process::home()?
         .join(".local/state/herdr-shepherd/mail")
         .join(task))

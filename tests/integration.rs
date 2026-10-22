@@ -1215,6 +1215,16 @@ fn omitted_task_uses_the_boss_in_the_current_folder() {
         assert!(f.mutations().is_empty());
     }
     status(&f.run(&[]), 2);
+    f.team(None, None, &[1, 3]);
+    let mut agents = f.agents().as_array().unwrap().clone();
+    agents[0]["name"] = json!("../../escape-boss");
+    f.save_agents(&json!(agents));
+    for args in [vec!["--team"], vec!["--send", "w1", "--message", "x"]] {
+        let result = f.run(&args);
+        status(&result, 2);
+        assert!(stderr(&result).contains("The task name accepts"));
+    }
+    assert!(!f.home.join(".local/state/herdr-shepherd/mail").exists());
 }
 
 fn send_stores_the_message_and_types_a_short_pointer() {

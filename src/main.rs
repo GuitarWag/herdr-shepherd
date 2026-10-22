@@ -75,6 +75,8 @@ fn run(args: &[String], viewer: bool) -> Result<()> {
     if let Some(mut options) = cli::parse(args)? {
         if options.task.is_empty() {
             options.task = view::infer_task(&options.cwd)?;
+            // The agent list is untrusted input; keep the name safe for paths.
+            cli::task_name(&options.task)?;
         }
         match options.operation {
             cli::Operation::Team => view::show(Some(&options.task), options.json),
