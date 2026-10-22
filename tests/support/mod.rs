@@ -412,6 +412,8 @@ pub fn terminal_supervisor(args: &[String]) -> Result<i32> {
     })
 }
 
+// Linux declares the openpty window as a const pointer; macOS as mutable.
+#[allow(clippy::unnecessary_mut_passed)]
 pub fn terminal(fixture: &Fixture, args: &[&str], keys: &[u8], size: (u16, u16)) -> (i32, String) {
     let mut master = -1;
     let mut slave = -1;
