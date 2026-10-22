@@ -53,6 +53,19 @@ Install herdr 0.7.3 or later.
 Authenticate Claude Code, Codex, or both.
 Source builds also require [Rust](https://www.rust-lang.org/tools/install) 1.89 or later and a C linker.
 
+From a [release](https://github.com/GuitarWag/herdr-shepherd/releases), with no Rust toolchain:
+
+```sh
+target="$(rustc -vV 2>/dev/null | sed -n 's/^host: //p')"   # or aarch64-apple-darwin, x86_64-apple-darwin, x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu
+curl -fsSL "https://github.com/GuitarWag/herdr-shepherd/releases/latest/download/herdr-shepherd-$target.tar.gz" | tar -xz
+./herdr-shepherd/install.sh
+export PATH="$HOME/.local/bin:$PATH"
+herdr-shepherd --help
+```
+
+Keep the unpacked `herdr-shepherd` folder; the installer links to it.
+Unpack a newer release over the same folder to upgrade.
+
 From a checkout of this repository:
 
 ```sh
@@ -294,6 +307,14 @@ Build the binary before running `./bin/herdr-shepherd` from a source checkout.
 For a compiled package, keep the binary at `bin/herdr-shepherd` and the skill under `skills/herdr-shepherd`.
 Keep the alias links beside the binary.
 Build a separate binary for each operating system and processor architecture.
+
+GitHub Actions runs fmt, clippy, and the tests on macOS and Linux for every push.
+A tag `vX.Y.Z` that matches the `version` in `Cargo.toml` builds four packages and publishes a release:
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
 
 ## License
 

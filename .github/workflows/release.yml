@@ -1,0 +1,65 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [macos-14, macos-13, ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the stable toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+      - name: Check that the tag matches Cargo.toml
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)"
+          if [ "$tag" != "$version" ]; then
+            echo "The tag v$tag does not match Cargo.toml version $version." >&2
+            exit 1
+          fi
+      - run: cargo build --release --locked
+      - name: Package
+        run: |
+          target="$(rustc -vV | sed -n 's/^host: //p')"
+          name="herdr-shepherd-$target"
+          mkdir -p "dist/herdr-shepherd/bin"
+          cp target/release/herdr-shepherd dist/herdr-shepherd/bin/
+          ln -s herdr-shepherd dist/herdr-shepherd/bin/herd-boss
+          ln -s herdr-shepherd dist/herdr-shepherd/bin/herd-view
+          cp -R skills install.sh README.md LICENSE dist/herdr-shepherd/
+          tar -C dist -czf "dist/$name.tar.gz" herdr-shepherd
+          rm -r dist/herdr-shepherd
+          ls -l dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.os }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum *.tar.gz > SHA256SUMS
+          cat SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes ./*.tar.gz SHA256SUMS
