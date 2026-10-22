@@ -2,12 +2,17 @@ mod cli;
 mod install;
 mod interactive;
 mod join;
+mod mail;
 mod process;
 mod tui;
 mod view;
 
 use serde_json::Value;
-use std::{env, io::IsTerminal, path::PathBuf};
+use std::{
+    env,
+    io::{IsTerminal, Read},
+    path::PathBuf,
+};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
@@ -67,11 +72,31 @@ fn run(args: &[String], viewer: bool) -> Result<()> {
     if args.first().map(String::as_str) == Some("--install") {
         return install::run(&args[1..]);
     }
-    if let Some(options) = cli::parse(args)? {
+    if let Some(mut options) = cli::parse(args)? {
+        if options.task.is_empty() {
+            options.task = view::infer_task(&options.cwd)?;
+        }
         match options.operation {
             cli::Operation::Team => view::show(Some(&options.task), options.json),
             cli::Operation::Join => join::run(&options),
             cli::Operation::Create => cli::create(&options),
+            cli::Operation::Send => {
+                let text = match &options.message {
+                    Some(text) => text.clone(),
+                    None if std::io::stdin().is_terminal() => {
+                        return Err(
+                            "Pass --message TEXT or pipe the message on standard input.".into()
+                        );
+                    }
+                    None => {
+                        let mut text = String::new();
+                        std::io::stdin().read_to_string(&mut text)?;
+                        text
+                    }
+                };
+                mail::send(&options, &options.to, &text)
+            }
+            cli::Operation::Read => mail::read(&options, options.message_id.as_deref()),
         }
     } else {
         Ok(())

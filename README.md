@@ -88,7 +88,7 @@ The defaults are `my-task`, your current folder, Claude Code for both roles, and
 | --- | --- |
 | Tab, Up, Down | Select a field. |
 | Enter | Validate the field and advance. Review after the last field. |
-| Left, Right | Change the selected agent. |
+| Left, Right | Switch an agent field between `claude` and `codex`. |
 | Type | Replace a field's default, then append text. |
 | Backspace | Delete the last character. Return from review to editing. |
 | Ctrl+U | Clear the selected field. |
@@ -96,8 +96,13 @@ The defaults are `my-task`, your current folder, Claude Code for both roles, and
 
 Enter `1` or `claude` for Claude Code.
 Enter `2` or `codex` for Codex.
+Add `:model` to an agent to select its model, for example `codex:gpt-6.1-sol`.
+Left and Right change an agent field only when its value is `claude` or `codex`.
 The folder accepts relative paths, absolute paths, and `~`.
-The selected worker agent applies to every worker.
+A single worker agent applies to every worker.
+The Worker agent field also accepts a comma-separated list, for example `codex:gpt-6.1-sol,codex,claude:opus`.
+A list with two or more entries sets the worker count when you validate the field.
+If you type a different worker count, the form shows an error.
 Press Enter on the review screen to confirm the team.
 The form restores the terminal before it starts the agents.
 The form requires at least 64 columns and 24 rows.
@@ -112,6 +117,7 @@ herdr-shepherd --interactive --dry-run
 Without arguments, the command opens the setup when its input and output use a terminal.
 Piped input and terminals with `TERM=dumb` use text prompts.
 The text prompts accept blank answers for defaults and `n` to cancel at confirmation.
+The text prompts accept the same agent entries and worker lists as the form.
 Use explicit command options in scripts.
 
 ## Command options
@@ -130,6 +136,15 @@ herdr-shepherd my-task --cwd /path/to/project \
   --boss-agent codex --worker-agent claude --worker-agent codex
 ```
 
+Start four Codex and Claude Code workers with a model for two of them:
+
+```sh
+herdr-shepherd my-task --cwd /path/to/project \
+  --worker-agent codex:gpt-6.1-sol --worker-agent codex \
+  --worker-agent codex --worker-agent claude:opus
+```
+
+`--boss-agent` and `--worker-agent` accept `AGENT[:MODEL]`.
 One `--worker-agent` applies to the count selected by `--workers`.
 Multiple entries define the worker order and count.
 An explicit count must match a list with multiple entries.
@@ -156,6 +171,8 @@ Both roles default to Claude Code.
 Use `--boss-model` or `--worker-model` to change the model for that role.
 Use `--model` to change both roles.
 A worker model override applies to every worker type.
+A model in an agent entry, such as `codex:gpt-6.1-sol`, overrides these options for that agent.
+The agent command rejects a model that it does not support.
 Select models that your account and each selected agent support.
 
 Codex starts with `--approve-for-me`.
@@ -171,7 +188,12 @@ herdr-shepherd my-task --add-worker --worker-agent codex --cwd /path/to/project
 ```
 
 The boss must exist, and the worker must use the boss folder.
+You can omit the task name for `--add-worker` and `--team`.
+The command then uses the one boss that runs in the current folder.
+When no boss or more than one boss runs there, the command stops and asks for the name.
+From a shell pane, `--worker-agent codex:MODEL` selects the agent and its model.
 From an existing Claude Code or Codex session, use `--add-worker` without model or folder options.
+The command rejects a model in `--worker-agent` from a running session.
 The command registers the session and prints its worker instructions.
 It preserves the running session, model, and folder.
 Registration requires a valid `HERDR_PANE_ID` from the target pane.
@@ -180,12 +202,31 @@ Repeat registration keeps the same worker name.
 Discover members across tabs:
 
 ```sh
-herdr-shepherd my-task --team
+herdr-shepherd --team
 herdr-shepherd my-task --team --json
 ```
 
 JSON includes each member's name, role, agent type, status, pane ID, and folder.
 Use `herd-view --watch` to inspect all registered sessions after a full installation.
+
+## Send messages between agents
+
+```sh
+herdr-shepherd --send w1 --message "Read src/auth.rs and list every caller."
+herdr-shepherd --send boss <<'MESSAGE'
+Result: ...
+MESSAGE
+herdr-shepherd --read m1761153600123-4242
+herdr-shepherd --read
+```
+
+`--send` stores the message in `~/.local/state/herdr-shepherd/mail/<task>/<id>.md`.
+It types a one-line pointer with the message ID into the target agent and submits it.
+The target agent runs `--read <id>` to print the complete message.
+`--read` without an ID lists the unread messages for the current pane.
+Each `--send` and `--read` deletes messages older than seven days.
+A new team with the same task name starts with an empty mailbox.
+Claude Code drops the start of a long typed burst, so the pointer keeps every message complete.
 
 ## Installation details
 

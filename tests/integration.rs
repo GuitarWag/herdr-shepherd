@@ -195,6 +195,25 @@ fn interactive_choices_use_the_existing_launch_path() {
     }
 }
 
+fn interactive_worker_list_uses_each_entry() {
+    let f = Fixture::new();
+    let result = f.input(
+        &["--interactive", "--dry-run"],
+        "\n\ncodex:boss-model\ncodex:m1,claude\n\n",
+    );
+    status(&result, 0);
+    let text = stdout(&result);
+    for expected in [
+        "--boss-agent codex:boss-model --worker-agent codex:m1 --worker-agent claude --workers 2",
+        "--model boss-model",
+        "--model m1",
+        "--model opus",
+    ] {
+        assert!(text.contains(expected), "{text}");
+    }
+    assert!(f.calls().is_empty());
+}
+
 fn interactive_expands_home_and_allows_zero_workers() {
     let f = Fixture::new();
     let folder = f.home.join("project");
@@ -427,6 +446,94 @@ fn codex_model_options_override_role_defaults() {
     }
 }
 
+fn agent_entries_select_models_in_a_mixed_list() {
+    let f = Fixture::new();
+    status(
+        &f.run(&[
+            "test",
+            "--boss-agent",
+            "codex:boss-entry",
+            "--worker-agent",
+            "codex:gpt-6.1-sol-entry",
+            "--worker-agent",
+            "codex",
+            "--worker-agent",
+            "claude",
+            "--worker-agent",
+            "claude:entry-opus",
+        ]),
+        0,
+    );
+    let launches = f.launches();
+    assert_eq!(
+        launches
+            .iter()
+            .map(|args| args[0].as_str())
+            .collect::<Vec<_>>(),
+        ["codex", "codex", "codex", "claude", "claude"]
+    );
+    assert_eq!(
+        models(&launches),
+        [
+            "boss-entry",
+            "gpt-6.1-sol-entry",
+            "gpt-6.1-sol",
+            "opus",
+            "entry-opus"
+        ]
+    );
+    f.clear_calls();
+    status(
+        &f.run(&[
+            "test",
+            "--worker-agent",
+            "codex:one-model",
+            "--workers",
+            "2",
+        ]),
+        0,
+    );
+    assert_eq!(models(&f.launches()), ["fable", "one-model", "one-model"]);
+}
+
+fn entry_models_win_over_model_options() {
+    let f = Fixture::new();
+    status(
+        &f.run(&[
+            "test",
+            "--boss-agent",
+            "claude:boss-entry",
+            "--worker-agent",
+            "codex:entry",
+            "--worker-agent",
+            "claude",
+            "--worker-model",
+            "worker-option",
+            "--model",
+            "shared-option",
+        ]),
+        0,
+    );
+    assert_eq!(
+        models(&f.launches()),
+        ["boss-entry", "entry", "shared-option"]
+    );
+    f.clear_calls();
+    status(
+        &f.run(&[
+            "test",
+            "--worker-agent",
+            "codex:entry",
+            "--worker-agent",
+            "claude",
+            "--worker-model",
+            "worker-option",
+        ]),
+        0,
+    );
+    assert_eq!(models(&f.launches()), ["fable", "entry", "worker-option"]);
+}
+
 fn zero_workers_and_explicit_models() {
     let f = Fixture::new();
     status(
@@ -468,6 +575,9 @@ fn invalid_arguments_create_no_panes() {
         vec![],
         vec!["test", "--boss-agent", "other"],
         vec!["test", "--worker-agent", "other"],
+        vec!["test", "--worker-agent", "other:model"],
+        vec!["test", "--worker-agent", "codex:"],
+        vec!["test", "--boss-agent", "claude:"],
         vec!["test", "--workers", "-1"],
         vec!["test", "--workers", "text"],
         vec!["test", "--workers", "10000"],
@@ -608,6 +718,28 @@ fn add_worker_starts_selected_agent_in_the_current_terminal() {
     );
 }
 
+fn add_worker_accepts_an_entry_model_from_a_shell_pane() {
+    let mut f = Fixture::new();
+    f.team(None, None, &[1, 3]);
+    status(
+        &f.run(&[
+            "test",
+            "--add-worker",
+            "--worker-agent",
+            "codex:entry-model",
+            "--worker-model",
+            "option-model",
+        ]),
+        0,
+    );
+    let args = f.agent_args();
+    assert_eq!(Path::new(&args[0]).file_name().unwrap(), "codex");
+    assert_eq!(
+        &args[1..args.len() - 1],
+        ["--approve-for-me", "--model", "entry-model"]
+    );
+}
+
 fn add_worker_starts_claude_by_default() {
     let mut f = Fixture::new();
     f.team(None, None, &[]);
@@ -686,12 +818,15 @@ fn add_worker_rejects_unsafe_targets_before_changes() {
         "other-agent",
         "change-agent",
         "change-model",
+        "change-entry-model",
         "change-directory",
     ];
     for case in cases {
         let mut f = Fixture::new();
         let agent = match case {
-            "duplicate-worker" | "change-agent" | "change-model" => Some("codex"),
+            "duplicate-worker" | "change-agent" | "change-model" | "change-entry-model" => {
+                Some("codex")
+            }
             "other-agent" => Some("opencode"),
             "change-directory" => Some("claude"),
             _ => None,
@@ -731,6 +866,7 @@ fn add_worker_rejects_unsafe_targets_before_changes() {
         let extra = match case {
             "change-agent" => vec!["--worker-agent", "claude"],
             "change-model" => vec!["--worker-model", "chosen-model"],
+            "change-entry-model" => vec!["--worker-agent", "codex:chosen-model"],
             "change-directory" => vec!["--cwd", f.root.to_str().unwrap()],
             _ => vec![],
         };
@@ -1045,6 +1181,130 @@ fn viewer_uses_agent_type_for_names_without_a_team_role() {
     assert_eq!(member["role"], "codex");
 }
 
+fn omitted_task_uses_the_boss_in_the_current_folder() {
+    let mut f = Fixture::new();
+    f.team(None, None, &[1, 3]);
+    let result = f.run(&["--team", "--json"]);
+    status(&result, 0);
+    let groups: Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(groups[0]["subject"], "test");
+    let result = f.run(&["--add-worker", "--worker-agent", "codex"]);
+    status(&result, 0);
+    assert!(stdout(&result).contains("test-w4"));
+    f.team(None, None, &[1, 3]);
+    f.clear_calls();
+    let mut agents = f.agents().as_array().unwrap().clone();
+    let mut other = agents[0].clone();
+    other["name"] = json!("other-boss");
+    other["pane_id"] = json!("other-boss-pane");
+    agents.push(other);
+    f.save_agents(&json!(agents));
+    for args in [vec!["--team"], vec!["--add-worker"]] {
+        let result = f.run(&args);
+        status(&result, 2);
+        assert!(stderr(&result).contains("Several teams run in this folder: other, test."));
+        assert!(f.mutations().is_empty());
+    }
+    agents[0]["cwd"] = json!(f.home.to_str().unwrap());
+    agents.pop();
+    f.save_agents(&json!(agents));
+    for args in [vec!["--team"], vec!["--add-worker"]] {
+        let result = f.run(&args);
+        status(&result, 2);
+        assert!(stderr(&result).contains("No team runs in this folder."));
+        assert!(f.mutations().is_empty());
+    }
+    status(&f.run(&[]), 2);
+}
+
+fn send_stores_the_message_and_types_a_short_pointer() {
+    let mut f = Fixture::new();
+    f.team(None, None, &[1, 3]);
+    let long = format!(
+        "{} $HOME 'quoted' \"double\"\nsecond line",
+        "x".repeat(6000)
+    );
+    let result = f.input(&["--send", "w1"], &long);
+    status(&result, 0);
+    let calls = f.calls();
+    let send = calls
+        .iter()
+        .find(|call| call[..2] == ["agent", "send"])
+        .unwrap();
+    assert_eq!(send[2], "test-w1");
+    assert!(send[3].len() < 120, "{}", send[3]);
+    assert!(!send[3].contains('$'));
+    assert!(calls.contains(&vec![
+        "pane".to_owned(),
+        "send-keys".into(),
+        "pane-1".into(),
+        "Enter".into()
+    ]));
+    let id = send[3].rsplit(' ').next().unwrap().to_owned();
+    assert!(send[3].contains(&format!("herdr-shepherd test --read {id}")));
+    f.env.insert("HERDR_PANE_ID".into(), "pane-1".into());
+    let result = f.run(&["--read"]);
+    status(&result, 0);
+    assert!(stdout(&result).contains(&format!("{id}  From: user  xxx")));
+    let result = f.run(&["test", "--read", &id]);
+    status(&result, 0);
+    assert!(stdout(&result).starts_with("From: user\nTo: test-w1\n\nxxx"));
+    assert!(stdout(&result).contains(&long));
+    let result = f.run(&["--read"]);
+    status(&result, 0);
+    assert!(stdout(&result).contains("No unread messages for test-w1."));
+    status(&f.run(&["--read", &id]), 0);
+    f.clear_calls();
+    status(&f.run(&["--send", "boss", "--message", "done"]), 0);
+    let calls = f.calls();
+    let send = calls
+        .iter()
+        .find(|call| call[..2] == ["agent", "send"])
+        .unwrap();
+    assert_eq!(send[2], "test-boss");
+    assert!(send[3].contains("from test-w1."));
+    assert!(
+        calls
+            .iter()
+            .any(|call| call.len() > 3 && call[..3] == ["pane", "send-keys", "boss-pane"])
+    );
+    f.clear_calls();
+    status(
+        &f.run(&["--send", "w2", "--message", "dry", "--dry-run"]),
+        0,
+    );
+    assert!(f.mutations().is_empty());
+    for args in [
+        vec!["--send", "w9", "--message", "x"],
+        vec!["--send", "--message", "x"],
+        vec!["--read", "missing-id"],
+        vec!["--read", "bad/id"],
+        vec!["--message", "x"],
+        vec!["--send", "w1", "--message", "x", "--workers", "2"],
+        vec!["--send", "w1", "--read"],
+    ] {
+        status(&f.run(&args), 2);
+    }
+    status(&f.input(&["--send", "w1"], " \n"), 2);
+    assert!(f.mutations().is_empty());
+    let mailbox = f.home.join(".local/state/herdr-shepherd/mail/test");
+    let stale = mailbox.join("m1-1.md");
+    fs::write(&stale, "From: user\nTo: test-w1\n\nold\n").unwrap();
+    fs::File::options()
+        .write(true)
+        .open(&stale)
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() - Duration::from_secs(8 * 24 * 60 * 60))
+        .unwrap();
+    let result = f.run(&["--read"]);
+    status(&result, 0);
+    assert!(!stdout(&result).contains("m1-1"));
+    assert!(!stale.exists());
+    assert!(mailbox.join(format!("{id}.read.md")).exists());
+    status(&f.run(&["test", "--workers", "0"]), 0);
+    assert!(!mailbox.exists());
+}
+
 fn team_list_explains_unreachable_server() {
     let mut f = Fixture::new();
     f.env.insert("HERD_TEST_OFFLINE".into(), "1".into());
@@ -1083,6 +1343,7 @@ fn main() {
         relocated_checkout_installs_and_runs_without_original_paths,
         interactive_defaults_preview_without_external_commands,
         interactive_choices_use_the_existing_launch_path,
+        interactive_worker_list_uses_each_entry,
         interactive_expands_home_and_allows_zero_workers,
         interactive_help_does_not_prompt,
         interactive_cancel_eof_and_conflicting_options_create_no_panes,
@@ -1094,6 +1355,8 @@ fn main() {
         each_boss_type_supports_mixed_workers,
         single_worker_type_applies_to_the_worker_count,
         codex_model_options_override_role_defaults,
+        agent_entries_select_models_in_a_mixed_list,
+        entry_models_win_over_model_options,
         zero_workers_and_explicit_models,
         model_and_initial_prompt_remain_single_arguments,
         invalid_arguments_create_no_panes,
@@ -1102,6 +1365,7 @@ fn main() {
         missing_selected_binary_stops_before_tab_creation,
         dry_run_needs_no_agent_or_herdr_binary,
         add_worker_starts_selected_agent_in_the_current_terminal,
+        add_worker_accepts_an_entry_model_from_a_shell_pane,
         add_worker_starts_claude_by_default,
         add_codex_worker_uses_the_worker_default_model,
         add_worker_preserves_each_running_agent_and_registration,
@@ -1109,6 +1373,8 @@ fn main() {
         add_worker_rejects_unsafe_targets_before_changes,
         add_worker_reports_json_errors_even_when_herdr_exits_zero,
         team_output_includes_workers_from_other_tabs,
+        omitted_task_uses_the_boss_in_the_current_folder,
+        send_stores_the_message_and_types_a_short_pointer,
         modes_reject_incompatible_options,
         simultaneous_joins_allocate_distinct_worker_numbers,
         join_waits_for_the_compatible_flock_registration_lock,

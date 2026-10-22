@@ -62,11 +62,9 @@ impl Form {
             self.values[1].clone(),
             "--boss-agent".into(),
             self.values[2].clone(),
-            "--worker-agent".into(),
-            self.values[3].clone(),
-            "--workers".into(),
-            self.values[4].clone(),
         ];
+        args.extend(interactive::worker_args(&self.values[3]));
+        args.extend(["--workers".into(), self.values[4].clone()]);
         if self.dry {
             args.push("--dry-run".into());
         }
@@ -87,7 +85,15 @@ impl Form {
                 value.to_owned()
             }
             1 => interactive::folder(value)?,
-            2 | 3 => interactive::selected_agent(value)?,
+            2 => interactive::selected_agent(value)?,
+            3 => {
+                let entries = interactive::selected_agents(value)?;
+                // A list sets the count unless the user typed a count.
+                if entries.len() > 1 && self.fresh[4] {
+                    self.values[4] = entries.len().to_string();
+                }
+                entries.join(",")
+            }
             _ => cli::worker_count(value)?.to_string(),
         };
         Ok(())
@@ -138,7 +144,10 @@ impl Form {
                     self.review = true;
                 }
             }
-            KeyCode::Left | KeyCode::Right if matches!(self.focus, 2 | 3) => {
+            KeyCode::Left | KeyCode::Right
+                if matches!(self.focus, 2 | 3)
+                    && matches!(self.values[self.focus].as_str(), "claude" | "codex") =>
+            {
                 self.values[self.focus] = if self.values[self.focus] == "claude" {
                     "codex"
                 } else {
@@ -235,7 +244,7 @@ impl Form {
             "Enter starts this team after review."
         };
         let description = format!(
-            "{}\n\n{}\n\nAgents: claude or 1; codex or 2.\nUse Left/Right to change an agent.\n\nAll workers use the selected worker agent.\nThe working folder accepts ~ and relative paths.",
+            "{}\n\n{}\n\nAgents: claude or 1; codex or 2. Add :model to select a model.\nLeft/Right switches between claude and codex.\n\nSeparate worker entries with commas. A list of two or more sets the worker count.\nThe working folder accepts ~ and relative paths.",
             self.command(),
             action
         );
@@ -362,6 +371,31 @@ mod tests {
         press(&mut form, KeyCode::Backspace).unwrap();
         assert!(!form.review);
         assert!(form.options().unwrap().worker_agents.is_empty());
+    }
+
+    #[test]
+    fn worker_list_sets_the_count_unless_the_user_typed_a_count() {
+        let mut form = Form::new(true).unwrap();
+        form.focus = 3;
+        form.insert("codex:m1, 2,claude:opus");
+        press(&mut form, KeyCode::Right).unwrap();
+        assert_eq!(form.values[3], "codex:m1, 2,claude:opus");
+        press(&mut form, KeyCode::Enter).unwrap();
+        assert_eq!(form.values[3], "codex:m1,codex,claude:opus");
+        assert_eq!(form.values[4], "3");
+        form.focus = 3;
+        form.values[3] = "codex,claude".into();
+        press(&mut form, KeyCode::Enter).unwrap();
+        assert_eq!(form.values[4], "2");
+        let options = form.options().unwrap();
+        assert_eq!(options.worker_agents, ["codex", "claude"]);
+        assert_eq!(options.worker_models, ["", ""]);
+        form.focus = 4;
+        form.insert("3");
+        assert!(form.options().is_err());
+        form.focus = 3;
+        form.insert("codex:");
+        assert!(press(&mut form, KeyCode::Enter).is_err());
     }
 
     #[test]

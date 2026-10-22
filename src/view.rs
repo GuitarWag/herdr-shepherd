@@ -1,6 +1,13 @@
 use crate::{Result, optional, process, string};
 use serde_json::{Value, json};
-use std::{collections::BTreeMap, env, path::Path, process::Command, thread, time::Duration};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env,
+    path::Path,
+    process::Command,
+    thread,
+    time::Duration,
+};
 
 pub fn team_name(name: &str) -> Option<(&str, &str)> {
     let (subject, role) = name.rsplit_once('-')?;
@@ -17,6 +24,34 @@ pub fn team_name(name: &str) -> Option<(&str, &str)> {
         Some((subject, role))
     } else {
         None
+    }
+}
+
+/// Find the task of the one boss that runs in `cwd`.
+pub fn infer_task(cwd: &Path) -> Result<String> {
+    let agents = process::herdr(&["agent", "list"])?;
+    let agents = agents["agents"]
+        .as_array()
+        .ok_or("The herdr agent list is missing.")?;
+    let tasks: BTreeSet<&str> = agents
+        .iter()
+        .filter(|agent| {
+            Path::new(optional(agent, "cwd"))
+                .canonicalize()
+                .is_ok_and(|folder| folder == cwd)
+        })
+        .filter_map(|agent| team_name(optional(agent, "name")))
+        .filter(|(_, role)| *role == "boss")
+        .map(|(task, _)| task)
+        .collect();
+    match tasks.len() {
+        1 => Ok(tasks.into_iter().next().unwrap_or_default().to_owned()),
+        0 => Err("No team runs in this folder. Pass the task name.".into()),
+        _ => Err(format!(
+            "Several teams run in this folder: {}. Pass one task name.",
+            tasks.into_iter().collect::<Vec<_>>().join(", ")
+        )
+        .into()),
     }
 }
 

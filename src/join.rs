@@ -99,7 +99,7 @@ pub fn run(options: &Options) -> Result<()> {
         if !requested.is_empty() && requested != current_agent {
             return Err(format!("The current pane already runs {current_agent}.").into());
         }
-        if !options.worker_model.is_empty() || options.change_directory {
+        if !options.worker_model(0).is_empty() || options.change_directory {
             return Err("Model and directory options require a shell pane.".into());
         }
     }
@@ -151,7 +151,7 @@ pub fn run(options: &Options) -> Result<()> {
     {
         return Err(format!("The worker name is not unique: {name}").into());
     }
-    let argv = cli::launch_args(options, selected, &name, &options.worker_model)?;
+    let argv = cli::launch_args(options, selected, &name, options.worker_model(0))?;
     if !options.dry {
         process::herdr(&["agent", "rename", &pane, &name])?;
         process::herdr(&["pane", "rename", &pane, &name])?;

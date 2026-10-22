@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-const HELP: &str = "usage: herdr-shepherd <task> [options]
+const HELP: &str = "usage: herdr-shepherd [<task>] [options]
        herdr-shepherd
        herdr-shepherd --interactive [--dry-run]
        herdr-shepherd --install [check]
@@ -16,8 +16,11 @@ const HELP: &str = "usage: herdr-shepherd <task> [options]
   --add-worker                   Use the current herdr pane as a worker.
   --team                         Show the team across tabs.
   --json                         Use JSON with --team.
-  --boss-agent claude|codex       Default: claude.
-  --worker-agent claude|codex     Repeat for an ordered list of workers.
+  --send boss|wN|NAME            Store a message and point the agent at it.
+  --message TEXT                 The message for --send. Default: standard input.
+  --read [ID]                    Print a message, or list unread messages for this pane.
+  --boss-agent AGENT[:MODEL]     claude or codex. Default: claude.
+  --worker-agent AGENT[:MODEL]   Repeat for an ordered list of workers.
   --workers N                    0 through 9999. Default: 3, or the worker list length.
   --cwd PATH                     Default: the current directory.
   --boss-model M                 Override the boss model.
@@ -28,9 +31,13 @@ const HELP: &str = "usage: herdr-shepherd <task> [options]
   --install [check]              Install or check the command and skill links.
 
 One --worker-agent applies to all workers. Multiple entries define each worker.
+A model in an agent entry overrides --boss-model, --worker-model, and --model.
 No arguments opens the terminal form when input and output use a terminal.
 An explicit worker count must match a list with multiple entries.
 --team accepts only --json. --add-worker rejects boss options and --workers.
+--team, --add-worker, --send and --read infer the task from the boss in the current folder.
+Messages live in ~/.local/state/herdr-shepherd/mail/<task>/ for seven days.
+A new team with the same task name starts with an empty mailbox.
 Running agents cannot change their model, folder, or agent type when they join.
 Claude defaults: fable for the boss, opus for workers.
 Codex defaults: gpt-6-astra for the boss, gpt-6.1-sol for workers.";
@@ -40,6 +47,8 @@ pub enum Operation {
     Create,
     Join,
     Team,
+    Send,
+    Read,
 }
 
 pub struct Options {
@@ -50,9 +59,15 @@ pub struct Options {
     pub json: bool,
     pub boss_agent: String,
     pub worker_agents: Vec<String>,
+    /// The model from each --worker-agent entry. An empty string means no entry model.
+    pub worker_models: Vec<String>,
     pub boss_model: String,
     pub worker_model: String,
     pub change_directory: bool,
+    /// The --send target and the --read message ID.
+    pub to: String,
+    pub message: Option<String>,
+    pub message_id: Option<String>,
 }
 
 pub fn agent(value: &str) -> Result<()> {
@@ -61,6 +76,16 @@ pub fn agent(value: &str) -> Result<()> {
     } else {
         Err(format!("unsupported agent: {value}").into())
     }
+}
+
+/// Split `AGENT[:MODEL]`. The agent rejects an unknown model itself.
+pub fn agent_entry(value: &str) -> Result<(String, String)> {
+    let (name, model) = value.split_once(':').unwrap_or((value, ""));
+    agent(name)?;
+    if value.contains(':') && model.is_empty() {
+        return Err(format!("The agent entry {value} has no model after the colon.").into());
+    }
+    Ok((name.to_owned(), model.to_owned()))
 }
 
 pub fn task_name(value: &str) -> Result<()> {
@@ -91,11 +116,17 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
         json: false,
         boss_agent: "claude".into(),
         worker_agents: Vec::new(),
+        worker_models: Vec::new(),
         boss_model: String::new(),
         worker_model: String::new(),
         change_directory: false,
+        to: String::new(),
+        message: None,
+        message_id: None,
     };
     let mut workers: Option<String> = None;
+    let mut boss_entry = String::new();
+    let mut worker_entries = Vec::new();
     let mut create_options = false;
     let mut worker_options = false;
     let mut index = 0;
@@ -117,8 +148,8 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
                 match option {
                     "--workers" => workers = Some(value.clone()),
                     "--cwd" => options.cwd = value.into(),
-                    "--boss-agent" => options.boss_agent = value.clone(),
-                    "--worker-agent" => options.worker_agents.push(value.clone()),
+                    "--boss-agent" => boss_entry = value.clone(),
+                    "--worker-agent" => worker_entries.push(value.clone()),
                     "--boss-model" => options.boss_model = value.clone(),
                     "--worker-model" => options.worker_model = value.clone(),
                     _ => {
@@ -127,15 +158,38 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
                     }
                 }
             }
-            "--team" | "--add-worker" => {
+            "--team" | "--add-worker" | "--send" | "--read" => {
                 if options.operation != Operation::Create {
-                    return Err("select one of --add-worker and --team".into());
+                    return Err("select one of --add-worker, --team, --send and --read".into());
                 }
-                options.operation = if option == "--team" {
-                    Operation::Team
-                } else {
-                    Operation::Join
+                options.operation = match option {
+                    "--team" => Operation::Team,
+                    "--add-worker" => Operation::Join,
+                    "--send" => {
+                        index += 1;
+                        options.to = args
+                            .get(index)
+                            .filter(|value| !value.is_empty() && !value.starts_with('-'))
+                            .ok_or("--send requires a target: boss, wN or an agent name")?
+                            .clone();
+                        Operation::Send
+                    }
+                    _ => {
+                        if let Some(value) = args
+                            .get(index + 1)
+                            .filter(|value| !value.is_empty() && !value.starts_with('-'))
+                        {
+                            index += 1;
+                            options.message_id = Some(value.clone());
+                        }
+                        Operation::Read
+                    }
                 };
+            }
+            "--message" => {
+                index += 1;
+                let value = args.get(index).ok_or("--message requires a value")?;
+                options.message = Some(value.clone());
             }
             "--json" => options.json = true,
             "--dry-run" => options.dry = true,
@@ -155,10 +209,24 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
         }
         index += 1;
     }
-    if options.task.is_empty() {
+    if options.task.is_empty() && options.operation == Operation::Create {
         return Err(HELP.into());
     }
-    task_name(&options.task)?;
+    if !options.task.is_empty() {
+        task_name(&options.task)?;
+    }
+    if !boss_entry.is_empty() {
+        let (name, model) = agent_entry(&boss_entry)?;
+        options.boss_agent = name;
+        if !model.is_empty() {
+            options.boss_model = model;
+        }
+    }
+    for entry in &worker_entries {
+        let (name, model) = agent_entry(entry)?;
+        options.worker_agents.push(name);
+        options.worker_models.push(model);
+    }
     if !options.cwd.is_dir() {
         return Err(format!("no such directory: {}", options.cwd.display()).into());
     }
@@ -166,11 +234,17 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
     if options.json && options.operation != Operation::Team {
         return Err("--json requires --team".into());
     }
+    if options.message.is_some() && options.operation != Operation::Send {
+        return Err("--message requires --send".into());
+    }
     match options.operation {
         Operation::Team
             if create_options || worker_options || options.change_directory || options.dry =>
         {
             return Err("--team accepts only --json".into());
+        }
+        Operation::Send | Operation::Read if create_options || worker_options => {
+            return Err("--send and --read accept only --cwd, --message and --dry-run".into());
         }
         Operation::Join => {
             if create_options {
@@ -178,9 +252,6 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
             }
             if options.worker_agents.len() > 1 {
                 return Err("--add-worker accepts one --worker-agent".into());
-            }
-            for selected in &options.worker_agents {
-                agent(selected)?;
             }
         }
         Operation::Create => {
@@ -197,22 +268,30 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
             if options.worker_agents.len() > 1 && options.worker_agents.len() != count {
                 return Err("--workers must match the number of --worker-agent entries".into());
             }
-            agent(&options.boss_agent)?;
-            for selected in &options.worker_agents {
-                agent(selected)?;
-            }
             if options.worker_agents.len() <= 1 {
                 let selected = options
                     .worker_agents
                     .first()
                     .cloned()
                     .unwrap_or_else(|| "claude".into());
+                let model = options.worker_models.first().cloned().unwrap_or_default();
                 options.worker_agents = vec![selected; count];
+                options.worker_models = vec![model; count];
             }
         }
         _ => {}
     }
     Ok(Some(options))
+}
+
+impl Options {
+    /// The entry model wins over --worker-model and --model.
+    pub fn worker_model(&self, index: usize) -> &str {
+        match self.worker_models.get(index) {
+            Some(model) if !model.is_empty() => model,
+            _ => &self.worker_model,
+        }
+    }
 }
 
 pub fn launch_args(options: &Options, agent: &str, name: &str, model: &str) -> Result<Vec<String>> {
@@ -316,6 +395,9 @@ pub fn create(options: &Options) -> Result<()> {
     } else {
         string(&process::herdr(&tab_args)?["root_pane"], "pane_id")?.to_owned()
     };
+    if !options.dry {
+        crate::mail::clear(&options.task)?;
+    }
     let name = format!("{}-boss", options.task);
     process::run(options.dry, &["pane", "rename", &boss, &name])?;
     process::run(options.dry, &["agent", "rename", &boss, &name])?;
@@ -352,7 +434,7 @@ pub fn create(options: &Options) -> Result<()> {
         let name = format!("{}-w{}", options.task, index + 1);
         process::run(options.dry, &["pane", "rename", &pane, &name])?;
         process::run(options.dry, &["agent", "rename", &pane, &name])?;
-        launch(options, &pane, agent, &name, &options.worker_model)?;
+        launch(options, &pane, agent, &name, options.worker_model(index))?;
         println!("w{}    {pane}  {agent}", index + 1);
         previous = pane;
     }
