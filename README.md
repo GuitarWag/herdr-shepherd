@@ -1,5 +1,11 @@
 # herdr-shepherd
 
+[![ci](https://github.com/GuitarWag/herdr-shepherd/actions/workflows/ci.yml/badge.svg)](https://github.com/GuitarWag/herdr-shepherd/actions/workflows/ci.yml)
+[![release](https://img.shields.io/github/v/release/GuitarWag/herdr-shepherd?label=release)](https://github.com/GuitarWag/herdr-shepherd/releases/latest)
+[![platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-blue)](https://github.com/GuitarWag/herdr-shepherd/releases/latest)
+[![rust](https://img.shields.io/badge/rust-1.89%2B-orange?logo=rust)](https://www.rust-lang.org/tools/install)
+[![license](https://img.shields.io/github/license/GuitarWag/herdr-shepherd)](LICENSE)
+
 Agent communication for Claude Code and Codex, over [herdr](https://herdr.dev).
 
 Agents discover their teammates, send tasks, check status, and read results across separate terminal sessions.
@@ -290,8 +296,8 @@ To keep the command available in new terminals, add the PATH line to your shell 
 ## Development and validation
 
 The project targets macOS and Linux.
-The current Rust build passes automated tests on macOS Apple Silicon.
-Linux and complete live-agent workflows still require validation.
+GitHub Actions runs the automated tests on macOS and Linux for every push.
+Live-agent workflows are validated on macOS Apple Silicon; Linux live runs still need a report.
 The tests use temporary folders and agent stubs.
 The unit tests, integration tests, fake commands, and terminal supervisor all use Rust.
 Run `cargo test` to check the complete suite.
