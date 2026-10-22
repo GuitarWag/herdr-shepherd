@@ -1,5 +1,11 @@
 use crate::{Result, package_root, process, string};
-use std::{env, path::PathBuf, thread, time::Duration};
+use std::{
+    env,
+    path::PathBuf,
+    process::Command,
+    thread,
+    time::{Duration, Instant},
+};
 
 const HELP: &str = "usage: herdr-shepherd <task> [options]
        herdr-shepherd
@@ -249,11 +255,30 @@ pub fn launch_args(options: &Options, agent: &str, name: &str, model: &str) -> R
     Ok(args)
 }
 
+/// The shell discards input that arrives before its line editor starts.
+/// A rendered prompt shows that the line editor is ready.
+fn wait_for_prompt(pane: &str) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let screen = process::output(
+            Command::new("herdr").args(["pane", "read", pane, "--source", "visible"]),
+            Duration::from_secs(10),
+        )?;
+        if screen.status.success() && !screen.stdout.iter().all(u8::is_ascii_whitespace) {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            eprintln!("warning: the pane {pane} shows no shell prompt after 15 seconds.");
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
 fn launch(options: &Options, pane: &str, agent: &str, name: &str, model: &str) -> Result<()> {
     let command = process::shell_command(&launch_args(options, agent, name, model)?);
-    // The pane shell needs time to start before it receives the command.
     if !options.dry {
-        thread::sleep(Duration::from_secs(1));
+        wait_for_prompt(pane)?;
     }
     process::run(options.dry, &["pane", "send-text", pane, &command])?;
     process::run(options.dry, &["pane", "send-keys", pane, "Enter"])

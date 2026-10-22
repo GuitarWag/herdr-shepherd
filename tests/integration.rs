@@ -532,7 +532,7 @@ fn dry_run_matches_real_commands_and_calls_no_programs() {
     }
     let actual: Vec<Vec<String>> = calls
         .iter()
-        .filter(|call| call[..2] != ["pane", "focus"])
+        .filter(|call| call[..2] != ["pane", "focus"] && call[..2] != ["pane", "read"])
         .map(|call| {
             call.iter()
                 .map(|arg| mapping.get(arg).unwrap_or(arg).clone())
