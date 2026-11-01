@@ -1049,7 +1049,10 @@ fn legacy_command_and_version() {
     f.clear_calls();
     let result = f.run(&["--version"]);
     status(&result, 0);
-    assert_eq!(stdout(&result).trim(), "herdr-shepherd 0.1.0");
+    assert_eq!(
+        stdout(&result).trim(),
+        concat!("herdr-shepherd ", env!("CARGO_PKG_VERSION"))
+    );
     assert!(f.calls().is_empty());
 }
 
