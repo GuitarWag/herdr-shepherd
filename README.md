@@ -247,6 +247,24 @@ Each `--send` and `--read` deletes messages older than seven days.
 A new team with the same task name starts with an empty mailbox.
 Claude Code drops the start of a long typed burst, so the pointer keeps every message complete.
 
+## Direct several teams
+
+A director manages several bosses from one pane.
+It does not send messages to workers.
+
+```sh
+herdr-shepherd org --director --cwd /path/to/project
+herdr-shepherd auth --cwd /path/to/project --under org --workers 2
+herdr-shepherd org --send auth-boss --message "Use the existing token cache."
+herdr-shepherd auth --send org-director --message "Result: ..."
+```
+
+The first command opens `org-director` in a new tab with no workers.
+The director runs the second command to start a team whose boss reports to it.
+Each message goes to the mailbox of the recipient's team.
+A director and a team cannot share a task name.
+An agent name that ends in `-director` is reserved for a director.
+
 ## Installation details
 
 The compiled commands require herdr and the selected agent commands.

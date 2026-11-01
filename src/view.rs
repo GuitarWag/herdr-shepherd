@@ -15,6 +15,7 @@ pub fn team_name(name: &str) -> Option<(&str, &str)> {
         return None;
     }
     if role == "boss"
+        || role == "director"
         || role.strip_prefix('w').is_some_and(|number| {
             !number.is_empty()
                 && !number.starts_with('0')
@@ -259,6 +260,7 @@ mod tests {
     fn names_require_a_complete_team_role() {
         assert_eq!(team_name("my-task-w12"), Some(("my-task", "w12")));
         assert_eq!(team_name("my-task-boss"), Some(("my-task", "boss")));
+        assert_eq!(team_name("org-director"), Some(("org", "director")));
         for name in ["api-review", "task-w0", "task-w01", "task-w1x", "-boss"] {
             assert_eq!(team_name(name), None);
         }

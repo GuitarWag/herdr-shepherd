@@ -199,6 +199,51 @@ The sender sees the file name change to `<id>.read.md` after the read.
 Each `--send` and `--read` deletes messages older than seven days.
 A new team with the same task name starts with an empty mailbox.
 
+## Direct several teams
+
+A director manages several bosses from one pane.
+Each boss manages its own workers.
+The director does not send messages to workers, and `--send` rejects that target.
+
+```sh
+herdr-shepherd org --director --cwd /path/to/project
+```
+
+The command opens one tab with the agent `org-director` and no workers.
+`--director` uses `--boss-agent` and `--boss-model`.
+
+The director starts a team for each piece of work:
+
+```sh
+herdr-shepherd auth --cwd /path/to/project --under org --workers 2
+```
+
+The command opens a new tab with `auth-boss` and its workers.
+The `--under org` option tells the boss to report to `org-director`.
+The director continues its own work while the new team starts.
+Use a team task name that differs from the director task name.
+The command refuses a task that a boss or director already uses in the other role.
+An agent name that ends in `-director` is reserved for a director.
+
+The director sends a decision to a boss:
+
+```sh
+herdr-shepherd org --send auth-boss --message "Use the existing token cache."
+```
+
+The boss reports milestones, blockers, and results to the director:
+
+```sh
+herdr-shepherd auth --send org-director --message "Result: ..."
+```
+
+The message goes to the mailbox of the recipient's team.
+The director lists its messages with `herdr-shepherd org --read`.
+A boss lists its messages with `herdr-shepherd auth --read`.
+The boss reads its messages between worker rounds.
+The director does not wait for a boss to finish.
+The user can open any pane to check or control the work at that level.
+
 ## Receive results
 
 ```sh
