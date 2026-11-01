@@ -100,20 +100,27 @@ pub fn send(options: &Options, to: &str, text: &str) -> Result<()> {
         string(target, "pane_id")?.to_owned()
     };
     let from = sender(&agents);
+    let role = |name: &str| crate::view::team_name(name).map(|(_, role)| role.to_owned());
+    if role(&from).as_deref() == Some("director")
+        && !matches!(role(&name).as_deref(), Some("boss" | "director"))
+    {
+        return Err(format!("A director sends messages only to bosses, not to {name}.").into());
+    }
+    // The recipient team owns the message, so its --read list shows it.
+    let task = crate::view::team_name(&name)
+        .map(|(task, _)| task)
+        .unwrap_or(&options.task);
     let id = format!(
         "m{}-{}",
         SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis(),
         std::process::id()
     );
-    let path = mailbox(&options.task)?.join(format!("{id}.md"));
+    let path = mailbox(task)?.join(format!("{id}.md"));
     if !options.dry {
         fs::write(&path, format!("From: {from}\nTo: {name}\n\n{text}\n"))?;
     }
     // The pointer stays short and plain, so the agent input receives it complete.
-    let pointer = format!(
-        "Message {id} from {from}. Run: herdr-shepherd {} --read {id}",
-        options.task
-    );
+    let pointer = format!("Message {id} from {from}. Run: herdr-shepherd {task} --read {id}");
     process::run(options.dry, &["agent", "send", &name, &pointer])?;
     process::run(options.dry, &["pane", "send-keys", &pane, "Enter"])?;
     if options.dry {

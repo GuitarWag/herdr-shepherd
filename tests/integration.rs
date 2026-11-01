@@ -642,7 +642,11 @@ fn dry_run_matches_real_commands_and_calls_no_programs() {
     }
     let actual: Vec<Vec<String>> = calls
         .iter()
-        .filter(|call| call[..2] != ["pane", "focus"] && call[..2] != ["pane", "read"])
+        .filter(|call| {
+            call[..2] != ["pane", "focus"]
+                && call[..2] != ["pane", "read"]
+                && call[..2] != ["agent", "list"]
+        })
         .map(|call| {
             call.iter()
                 .map(|arg| mapping.get(arg).unwrap_or(arg).clone())
@@ -1222,7 +1226,7 @@ fn omitted_task_uses_the_boss_in_the_current_folder() {
     for args in [vec!["--team"], vec!["--send", "w1", "--message", "x"]] {
         let result = f.run(&args);
         status(&result, 2);
-        assert!(stderr(&result).contains("The task name accepts"));
+        assert!(stderr(&result).contains("The task name starts with"));
     }
     assert!(!f.home.join(".local/state/herdr-shepherd/mail").exists());
 }
@@ -1315,6 +1319,80 @@ fn send_stores_the_message_and_types_a_short_pointer() {
     assert!(!mailbox.exists());
 }
 
+fn director_manages_bosses_and_not_workers() {
+    let mut f = Fixture::new();
+    status(&f.run(&["org", "--director", "--boss-agent", "codex"]), 0);
+    let launches = f.launches();
+    assert_eq!(launches.len(), 1);
+    assert_eq!(models(&launches), ["gpt-6-astra"]);
+    assert!(
+        launches[0]
+            .last()
+            .unwrap()
+            .contains("You are the director for org.")
+    );
+    assert!(
+        f.calls()
+            .iter()
+            .any(|call| call[..2] == ["agent", "rename"] && call[3] == "org-director")
+    );
+    assert!(!f.calls().iter().any(|call| call[..2] == ["pane", "split"]));
+    f.clear_calls();
+    status(&f.run(&["test", "--under", "org", "--workers", "0"]), 0);
+    assert!(f.launches()[0].last().unwrap().contains(
+        "Your director is org-director. Send milestones, blockers and results with: herdr-shepherd test --send org-director."
+    ));
+    for args in [
+        vec!["org", "--director", "--workers", "1"],
+        vec!["org", "--director", "--worker-agent", "codex"],
+        vec!["org", "--director", "--under", "top"],
+        vec!["org", "--team", "--director"],
+        vec!["test", "--under", "bad/name"],
+        vec!["test", "--under", "test"],
+        vec!["..", "--workers", "0"],
+        vec![".", "--director"],
+        vec!["x", "--send", "boss", "--under", ".."],
+    ] {
+        status(&f.run(&args), 2);
+    }
+    f.team(None, Some("org-director"), &[1]);
+    f.clear_calls();
+    for args in [vec!["org", "--workers", "0"], vec!["test", "--director"]] {
+        let result = f.run(&args);
+        status(&result, 2);
+        assert!(stderr(&result).contains("Choose another task name"));
+        assert!(f.mutations().is_empty());
+    }
+    let mut agents = f.agents();
+    agents
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"pane_id": "dots", "name": "..-boss"}));
+    f.save_agents(&agents);
+    let result = f.run(&["org", "--send", "..-boss", "--message", "x"]);
+    status(&result, 2);
+    assert!(f.mutations().is_empty());
+    f.clear_calls();
+    status(
+        &f.run(&["org", "--send", "test-boss", "--message", "go"]),
+        0,
+    );
+    let calls = f.calls();
+    let send = calls
+        .iter()
+        .find(|call| call[..2] == ["agent", "send"])
+        .unwrap();
+    assert!(send[3].contains("from org-director. Run: herdr-shepherd test --read"));
+    let id = send[3].rsplit(' ').next().unwrap();
+    let mailbox = f.home.join(".local/state/herdr-shepherd/mail");
+    assert!(mailbox.join(format!("test/{id}.md")).is_file());
+    f.clear_calls();
+    let result = f.run(&["org", "--send", "test-w1", "--message", "go"]);
+    status(&result, 2);
+    assert!(stderr(&result).contains("A director sends messages only to bosses"));
+    assert!(f.mutations().is_empty());
+}
+
 fn team_list_explains_unreachable_server() {
     let mut f = Fixture::new();
     f.env.insert("HERD_TEST_OFFLINE".into(), "1".into());
@@ -1385,6 +1463,7 @@ fn main() {
         team_output_includes_workers_from_other_tabs,
         omitted_task_uses_the_boss_in_the_current_folder,
         send_stores_the_message_and_types_a_short_pointer,
+        director_manages_bosses_and_not_workers,
         modes_reject_incompatible_options,
         simultaneous_joins_allocate_distinct_worker_numbers,
         join_waits_for_the_compatible_flock_registration_lock,

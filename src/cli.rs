@@ -14,6 +14,8 @@ const HELP: &str = "usage: herdr-shepherd [<task>] [options]
   -h, --help                     Show this help.
   --interactive                  Open the terminal form. Piped input uses text prompts.
   --add-worker                   Use the current herdr pane as a worker.
+  --director                     Start a director that manages bosses, with no workers.
+  --under NAME                   Report this boss to the director NAME-director.
   --team                         Show the team across tabs.
   --json                         Use JSON with --team.
   --send boss|wN|NAME            Store a message and point the agent at it.
@@ -38,6 +40,7 @@ An explicit worker count must match a list with multiple entries.
 --team, --add-worker, --send and --read infer the task from the boss in the current folder.
 Messages live in ~/.local/state/herdr-shepherd/mail/<task>/ for seven days.
 A new team with the same task name starts with an empty mailbox.
+--director uses --boss-agent and --boss-model and rejects worker options.
 Running agents cannot change their model, folder, or agent type when they join.
 Claude defaults: fable for the boss, opus for workers.
 Codex defaults: gpt-6-astra for the boss, gpt-6.1-sol for workers.";
@@ -68,6 +71,9 @@ pub struct Options {
     pub to: String,
     pub message: Option<String>,
     pub message_id: Option<String>,
+    pub director: bool,
+    /// The task of the director that this boss reports to.
+    pub under: String,
 }
 
 pub fn agent(value: &str) -> Result<()> {
@@ -89,13 +95,16 @@ pub fn agent_entry(value: &str) -> Result<(String, String)> {
 }
 
 pub fn task_name(value: &str) -> Result<()> {
-    if value.is_empty()
-        || value.starts_with('-')
+    // A leading dot allows `..`, which leaves the mail folder.
+    if !value.starts_with(|c: char| c.is_ascii_alphanumeric())
         || !value
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
     {
-        return Err("The task name accepts letters, digits, dot, dash and underscore.".into());
+        return Err(
+            "The task name starts with a letter or digit and accepts dot, dash and underscore."
+                .into(),
+        );
     }
     Ok(())
 }
@@ -123,6 +132,8 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
         to: String::new(),
         message: None,
         message_id: None,
+        director: false,
+        under: String::new(),
     };
     let mut workers: Option<String> = None;
     let mut boss_entry = String::new();
@@ -134,14 +145,16 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
         let option = args[index].as_str();
         match option {
             "--workers" | "--cwd" | "--boss-agent" | "--worker-agent" | "--boss-model"
-            | "--worker-model" | "--model" => {
+            | "--worker-model" | "--model" | "--under" => {
                 index += 1;
                 let value = args
                     .get(index)
                     .filter(|value| !value.is_empty() && !value.starts_with("--"))
                     .ok_or_else(|| format!("{option} requires a value"))?;
                 match option {
-                    "--workers" | "--boss-agent" | "--boss-model" => create_options = true,
+                    "--workers" | "--boss-agent" | "--boss-model" | "--under" => {
+                        create_options = true
+                    }
                     "--cwd" => options.change_directory = true,
                     _ => worker_options = true,
                 }
@@ -152,6 +165,7 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
                     "--worker-agent" => worker_entries.push(value.clone()),
                     "--boss-model" => options.boss_model = value.clone(),
                     "--worker-model" => options.worker_model = value.clone(),
+                    "--under" => options.under = value.clone(),
                     _ => {
                         options.boss_model = value.clone();
                         options.worker_model = value.clone();
@@ -191,6 +205,7 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
                 let value = args.get(index).ok_or("--message requires a value")?;
                 options.message = Some(value.clone());
             }
+            "--director" => options.director = true,
             "--json" => options.json = true,
             "--dry-run" => options.dry = true,
             "--version" => {
@@ -234,6 +249,18 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
     if options.json && options.operation != Operation::Team {
         return Err("--json requires --team".into());
     }
+    if options.director && options.operation != Operation::Create {
+        return Err("--director starts a new director".into());
+    }
+    if !options.under.is_empty() {
+        task_name(&options.under)?;
+        if options.under == options.task {
+            return Err("--under names another task, not this team".into());
+        }
+        if options.director {
+            return Err("--under requires a boss, not --director".into());
+        }
+    }
     if options.message.is_some() && options.operation != Operation::Send {
         return Err("--message requires --send".into());
     }
@@ -252,6 +279,11 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
             }
             if options.worker_agents.len() > 1 {
                 return Err("--add-worker accepts one --worker-agent".into());
+            }
+        }
+        Operation::Create if options.director => {
+            if workers.is_some() || worker_options {
+                return Err("--director accepts no workers or worker options".into());
             }
         }
         Operation::Create => {
@@ -295,19 +327,38 @@ impl Options {
 }
 
 pub fn launch_args(options: &Options, agent: &str, name: &str, model: &str) -> Result<Vec<String>> {
-    let boss = name == format!("{}-boss", options.task);
+    let director = options.director;
+    let boss = director || name == format!("{}-boss", options.task);
     let skill = package_root()?.join("skills/herdr-shepherd/SKILL.md");
     let mut prompt = format!(
         "Read the herdr-shepherd skill at {}. You are {name}.",
         skill.display()
     );
-    if boss {
+    if director {
+        prompt += &format!(
+            " You are the director for {task}. You manage bosses, not workers. \
+Start a team with: herdr-shepherd TASK --cwd PATH --under {task}. \
+Send decisions with: herdr-shepherd {task} --send TASK-boss. \
+Do not wait for a boss to finish. Do not send messages to workers. \
+List your messages with: herdr-shepherd {task} --read. Wait for the user's task.",
+            task = options.task
+        );
+    } else if boss {
         prompt += &format!(
             " You are the boss for {} with {} workers named {}-wN. Wait for the user's task.",
             options.task,
             options.worker_agents.len(),
             options.task
         );
+        if !options.under.is_empty() {
+            prompt += &format!(
+                " Your director is {under}-director. \
+Send milestones, blockers and results with: herdr-shepherd {task} --send {under}-director. \
+Run herdr-shepherd {task} --read between worker rounds.",
+                under = options.under,
+                task = options.task
+            );
+        }
     } else {
         prompt += &format!(
             " Your boss is {}-boss. Wait for a task. Report results in this pane for the boss to read.",
@@ -375,6 +426,22 @@ pub fn create(options: &Options) -> Result<()> {
             }
         }
     }
+    if !options.dry {
+        // A director and a boss of one task share a mailbox.
+        let other = if options.director { "boss" } else { "director" };
+        let other = format!("{}-{other}", options.task);
+        let agents = process::herdr(&["agent", "list"])?;
+        if agents["agents"]
+            .as_array()
+            .is_some_and(|agents| agents.iter().any(|agent| agent["name"] == other))
+        {
+            return Err(format!(
+                "{other} already uses the task {}. Choose another task name.",
+                options.task
+            )
+            .into());
+        }
+    }
     let cwd = options
         .cwd
         .to_str()
@@ -398,7 +465,8 @@ pub fn create(options: &Options) -> Result<()> {
     if !options.dry {
         crate::mail::clear(&options.task)?;
     }
-    let name = format!("{}-boss", options.task);
+    let role = if options.director { "director" } else { "boss" };
+    let name = format!("{}-{role}", options.task);
     process::run(options.dry, &["pane", "rename", &boss, &name])?;
     process::run(options.dry, &["agent", "rename", &boss, &name])?;
     launch(
@@ -408,7 +476,7 @@ pub fn create(options: &Options) -> Result<()> {
         &name,
         &options.boss_model,
     )?;
-    println!("boss  {boss}  {}", options.boss_agent);
+    println!("{role}  {boss}  {}", options.boss_agent);
     let mut previous = boss;
     for (index, agent) in options.worker_agents.iter().enumerate() {
         let direction = if index == 0 { "right" } else { "down" };
@@ -440,7 +508,9 @@ pub fn create(options: &Options) -> Result<()> {
     }
     if !options.dry {
         let _ = process::herdr(&["pane", "focus", "--direction", "left", "--pane", &previous]);
-        if options.worker_agents.is_empty() {
+        if options.director {
+            println!("The director runs {}.", options.boss_agent);
+        } else if options.worker_agents.is_empty() {
             println!("No workers. The boss runs {}.", options.boss_agent);
         } else {
             println!(
