@@ -2,12 +2,42 @@ use crate::{Result, optional, process, string};
 use serde_json::{Value, json};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    env,
-    path::Path,
+    env, fs,
+    path::{Path, PathBuf},
     process::Command,
     thread,
     time::Duration,
 };
+
+fn link(task: &str) -> Result<PathBuf> {
+    crate::cli::task_name(task)?;
+    Ok(process::home()?
+        .join(".local/state/herdr-shepherd/under")
+        .join(task))
+}
+
+/// Record the director task of a team. An empty value removes the link.
+pub fn set_director(task: &str, under: &str) -> Result<()> {
+    let path = link(task)?;
+    if under.is_empty() {
+        match fs::remove_file(path) {
+            Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
+            _ => Ok(()),
+        }
+    } else {
+        fs::create_dir_all(path.parent().ok_or("The link folder is missing.")?)?;
+        Ok(fs::write(path, under)?)
+    }
+}
+
+pub fn director_of(task: &str) -> String {
+    link(task)
+        .and_then(|path| Ok(fs::read_to_string(path)?))
+        .map(|text| text.trim().to_owned())
+        .ok()
+        .filter(|under| crate::cli::task_name(under).is_ok())
+        .unwrap_or_default()
+}
 
 pub fn team_name(name: &str) -> Option<(&str, &str)> {
     let (subject, role) = name.rsplit_once('-')?;
@@ -91,7 +121,7 @@ fn repo(cwd: &str) -> Option<String> {
     Some(parts[parts.len().saturating_sub(2)..].join("/"))
 }
 
-fn groups(subject: Option<&str>) -> Result<Vec<Value>> {
+pub fn groups(subject: Option<&str>) -> Result<Vec<Value>> {
     let agents = process::herdr(&["agent", "list"])?;
     let agents = agents["agents"]
         .as_array()
@@ -140,13 +170,18 @@ fn groups(subject: Option<&str>) -> Result<Vec<Value>> {
             let pane = string(agent, "pane_id")?;
             members.push(json!({ "name": default(optional(agent, "name"), pane), "role": role(agent),
                 "agent": default(optional(agent, "agent"), "?"), "status": default(optional(agent, "agent_status"), "unknown"),
-                "pane_id": pane, "cwd": optional(agent, "cwd") }));
+                "pane_id": pane, "tab_id": optional(agent, "tab_id"), "cwd": optional(agent, "cwd") }));
         }
         let display = repo(cwd).unwrap_or_else(|| match env::var("HOME") {
             Ok(home) if !home.is_empty() => cwd.replace(&home, "~"),
             _ => cwd.to_owned(),
         });
-        output.push(json!({ "subject": name, "kind": kind, "cwd": cwd, "repo": display,
+        let under = if kind == "herd" {
+            director_of(&name)
+        } else {
+            String::new()
+        };
+        output.push(json!({ "subject": name, "kind": kind, "under": under, "cwd": cwd, "repo": display,
             "blocked": agents.iter().filter(|agent| optional(agent, "agent_status") == "blocked").count(),
             "working": agents.iter().filter(|agent| optional(agent, "agent_status") == "working").count(),
             "members": members }));

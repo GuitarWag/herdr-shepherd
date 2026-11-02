@@ -477,14 +477,17 @@ pub fn terminal(fixture: &Fixture, args: &[&str], keys: &[u8], size: (u16, u16))
             }
         }
     };
-    while !String::from_utf8_lossy(&bytes).contains("\x1b[?2004h") {
+    while !String::from_utf8_lossy(&bytes).contains("\x1b[?1049h") {
         read(&mut master, &mut bytes);
         assert!(
             child.0.try_wait().unwrap().is_none(),
             "{}",
             String::from_utf8_lossy(&bytes)
         );
-        assert!(Instant::now() < deadline, "The form did not appear.");
+        assert!(
+            Instant::now() < deadline,
+            "The full-screen view did not appear."
+        );
     }
     master.write_all(keys).unwrap();
     let mut acknowledged = false;

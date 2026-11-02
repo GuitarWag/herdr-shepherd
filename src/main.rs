@@ -1,3 +1,4 @@
+mod board;
 mod cli;
 mod install;
 mod interactive;
@@ -50,8 +51,15 @@ fn run(args: &[String], viewer: bool) -> Result<()> {
     if viewer {
         return view::run(args);
     }
-    if args.is_empty() && std::io::stdin().is_terminal() && std::io::stdout().is_terminal() {
-        return interactive::run(false);
+    if args.is_empty()
+        && std::io::stdin().is_terminal()
+        && std::io::stdout().is_terminal()
+        && env::var("TERM").as_deref() != Ok("dumb")
+    {
+        return match board::run()? {
+            board::Action::NewTeam => interactive::run(false),
+            board::Action::Quit => Ok(()),
+        };
     }
     if args.iter().any(|arg| arg == "--interactive") {
         if args
