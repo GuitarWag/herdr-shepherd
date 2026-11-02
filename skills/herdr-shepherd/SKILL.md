@@ -13,28 +13,15 @@ This package does not create or manage Git worktrees.
 ## Open a herd
 
 For a user who wants to see every team, run `herdr-shepherd` without arguments in a terminal.
-It opens the board, and `n` on the board opens the setup form.
-Use `herdr-shepherd --interactive` to open the setup form directly.
-The Ratatui form shows the task name, working folder, boss agent, worker agent, and worker count.
-Use Tab or Up/Down to select a field.
-Type to replace a default.
-Use Ctrl+U to clear a field.
-Use Enter to validate and advance.
-Use Left/Right to change the selected agent.
-The defaults are `my-task`, the current folder, Claude Code for both roles, and three workers.
-Enter `claude` or `1` for Claude Code.
-Enter `codex` or `2` for Codex.
-Add `:model` to an agent to select its model, for example `codex:gpt-6.1-sol`.
-Left/Right change an agent field only when its value is `claude` or `codex`.
-A single worker agent applies to every worker.
-The Worker agent field also accepts a comma-separated list of `agent[:model]` entries.
-A list with two or more entries sets the worker count when you validate the field.
-The form shows the command before the user confirms it.
-Press Enter on the review screen to confirm.
-Use Backspace to return from review to editing.
-Use Esc or Ctrl+C to cancel.
-The form requires at least 64 columns and 24 rows.
-Piped input and `TERM=dumb` use text prompts with the same defaults.
+It opens the board.
+On the board, `n` opens the launcher for a team, and `d` opens the launcher for a director.
+Use `herdr-shepherd --interactive` to open the launcher alone.
+The launcher sets the kind, task name, folder, director, boss, and each worker.
+Use Up/Down or Tab to select a field.
+Use Left/Right or Space to change a choice, and `+` or `-` to change the worker count.
+Type to edit the name, the folder, or a custom model.
+Press Enter to start the team, and press Esc to close the launcher.
+Piped input and `TERM=dumb` use text prompts.
 Use `herdr-shepherd --interactive --dry-run` to preview commands without creating a team.
 Agents should use explicit command options for automated tasks.
 

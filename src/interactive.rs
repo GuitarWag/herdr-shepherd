@@ -155,7 +155,7 @@ pub fn run(dry: bool) -> Result<()> {
         && io::stdout().is_terminal()
         && env::var("TERM").as_deref() != Ok("dumb")
     {
-        crate::tui::setup(dry)?
+        crate::launcher::setup(dry)?
     } else {
         setup(&mut io::stdin().lock(), &mut io::stdout().lock(), dry)?
     };

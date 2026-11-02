@@ -12,7 +12,7 @@ const HELP: &str = "usage: herdr-shepherd [<task>] [options]
        herdr-shepherd --interactive [--dry-run]
        herdr-shepherd --install [check]
   -h, --help                     Show this help.
-  --interactive                  Open the terminal form. Piped input uses text prompts.
+  --interactive                  Open the launcher. Piped input uses text prompts.
   --add-worker                   Use the current herdr pane as a worker.
   --director                     Start a director that manages bosses, with no workers.
   --under NAME                   Report this boss to the director NAME-director.
@@ -326,6 +326,16 @@ impl Options {
     }
 }
 
+/// The model for an agent role when no option selects one.
+pub fn default_model(agent: &str, lead: bool) -> &'static str {
+    match (agent, lead) {
+        ("claude", true) => "fable",
+        ("claude", false) => "opus",
+        (_, true) => "gpt-6-astra",
+        _ => "gpt-6.1-sol",
+    }
+}
+
 pub fn launch_args(options: &Options, agent: &str, name: &str, model: &str) -> Result<Vec<String>> {
     let director = options.director;
     let boss = director || name == format!("{}-boss", options.task);
@@ -371,15 +381,10 @@ Run herdr-shepherd {task} --read between worker rounds.",
     } else {
         args.push("--approve-for-me".into());
     }
-    let model = if !model.is_empty() {
-        model
+    let model = if model.is_empty() {
+        default_model(agent, boss)
     } else {
-        match (agent, boss) {
-            ("claude", true) => "fable",
-            ("claude", false) => "opus",
-            (_, true) => "gpt-6-astra",
-            _ => "gpt-6.1-sol",
-        }
+        model
     };
     args.extend(["--model".into(), model.into(), prompt]);
     Ok(args)

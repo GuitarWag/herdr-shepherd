@@ -1,4 +1,8 @@
-use crate::{Result, optional, process};
+use crate::{
+    Result,
+    launcher::{Launcher, Outcome, PasteMode},
+    optional, process,
+};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::{
     Frame,
@@ -22,7 +26,16 @@ const REFRESH: Duration = Duration::from_secs(2);
 
 pub enum Action {
     Quit,
-    NewTeam,
+    Launch(Box<crate::cli::Options>),
+}
+
+/// The task names of the directors in a group list.
+pub fn directors(groups: &[Value]) -> Vec<String> {
+    groups
+        .iter()
+        .filter(|group| is_director(group))
+        .map(|group| optional(group, "subject").to_owned())
+        .collect()
 }
 
 /// One line of the tree: a group, or one member of a group.
@@ -44,6 +57,7 @@ pub struct Board {
     message: String,
     /// The selection changed, so the detail panel needs new data.
     stale: bool,
+    launcher: Option<Launcher>,
 }
 
 fn members(group: &Value) -> &[Value] {
@@ -180,7 +194,36 @@ impl Board {
         self.rebuild(selected);
     }
 
+    /// The director of the selected row, as a default for a new team.
+    fn selected_director(&self) -> Option<String> {
+        let group = &self.groups[self.selected_row()?.group];
+        if is_director(group) {
+            Some(optional(group, "subject").to_owned())
+        } else {
+            Some(optional(group, "under").to_owned()).filter(|under| !under.is_empty())
+        }
+    }
+
+    fn open(&mut self, director: bool) -> Result<()> {
+        let under = self.selected_director();
+        self.launcher = Some(Launcher::new(
+            director,
+            directors(&self.groups),
+            under.as_deref(),
+            false,
+        )?);
+        Ok(())
+    }
+
     fn key(&mut self, key: KeyEvent) -> Result<Option<Action>> {
+        if let Some(launcher) = &mut self.launcher {
+            match launcher.key(key) {
+                Some(Outcome::Cancel) => self.launcher = None,
+                Some(Outcome::Launch(options)) => return Ok(Some(Action::Launch(options))),
+                None => {}
+            }
+            return Ok(None);
+        }
         self.message.clear();
         let before = self.list.selected();
         match key.code {
@@ -188,7 +231,8 @@ impl Board {
             KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 return Ok(Some(Action::Quit));
             }
-            KeyCode::Char('n') => return Ok(Some(Action::NewTeam)),
+            KeyCode::Char('n') => self.open(false)?,
+            KeyCode::Char('d') => self.open(true)?,
             KeyCode::Down | KeyCode::Char('j') => self.list.select_next(),
             KeyCode::Up | KeyCode::Char('k') => self.list.select_previous(),
             KeyCode::Home | KeyCode::Char('g') => self.list.select_first(),
@@ -465,6 +509,7 @@ impl Board {
             ("←→", "fold"),
             ("⏎", "open tab"),
             ("n", "new team"),
+            ("d", "new director"),
             ("q", "quit"),
         ] {
             spans.push(Span::styled(key, Style::new().fg(ACCENT).bold()));
@@ -490,24 +535,38 @@ fn panel(title: &str, focused: bool) -> Block<'_> {
     }
 }
 
-pub fn run() -> Result<Action> {
-    let mut board = Board::default();
+pub fn run(message: String) -> Result<Action> {
+    let mut board = Board {
+        message,
+        ..Board::default()
+    };
     board.refresh();
     ratatui::run(|terminal| -> Result<Action> {
+        let _paste = PasteMode::on()?;
         let mut last = Instant::now();
         loop {
             if board.stale {
                 board.detail();
             }
-            terminal.draw(|frame| board.draw(frame))?;
-            if event::poll(Duration::from_millis(250))?
-                && let Event::Key(key) = event::read()?
-                && key.kind == KeyEventKind::Press
-            {
-                match board.key(key) {
-                    Ok(Some(action)) => return Ok(action),
-                    Ok(None) => {}
-                    Err(error) => board.message = error.to_string(),
+            terminal.draw(|frame| {
+                board.draw(frame);
+                if let Some(launcher) = &board.launcher {
+                    launcher.draw(frame);
+                }
+            })?;
+            if event::poll(Duration::from_millis(250))? {
+                match event::read()? {
+                    Event::Key(key) if key.kind == KeyEventKind::Press => match board.key(key) {
+                        Ok(Some(action)) => return Ok(action),
+                        Ok(None) => {}
+                        Err(error) => board.message = error.to_string(),
+                    },
+                    Event::Paste(text) => {
+                        if let Some(launcher) = &mut board.launcher {
+                            launcher.insert(&text);
+                        }
+                    }
+                    _ => {}
                 }
             }
             if last.elapsed() >= REFRESH {
@@ -615,10 +674,12 @@ mod tests {
         assert_eq!(board.key_of(board.selected_row().unwrap()), "auth");
         press(&mut board, KeyCode::Right);
         assert_eq!(keys(&board).len(), 6);
-        assert!(matches!(
-            press(&mut board, KeyCode::Char('n')),
-            Some(Action::NewTeam)
-        ));
+        assert!(press(&mut board, KeyCode::Char('n')).is_none());
+        assert_eq!(board.selected_director().as_deref(), Some("org"));
+        assert!(board.launcher.is_some());
+        assert!(press(&mut board, KeyCode::Char('q')).is_none());
+        assert!(press(&mut board, KeyCode::Esc).is_none());
+        assert!(board.launcher.is_none());
         assert!(matches!(
             press(&mut board, KeyCode::Char('q')),
             Some(Action::Quit)
