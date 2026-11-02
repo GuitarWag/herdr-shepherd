@@ -1,5 +1,6 @@
 mod board;
 mod cli;
+mod compose;
 mod install;
 mod interactive;
 mod join;
@@ -56,15 +57,14 @@ fn run(args: &[String], viewer: bool) -> Result<()> {
         && std::io::stdout().is_terminal()
         && env::var("TERM").as_deref() != Ok("dumb")
     {
-        let mut message = String::new();
+        let mut status = Ok(String::new());
         loop {
-            match board::run(message)? {
+            match board::run(status)? {
                 board::Action::Quit => return Ok(()),
                 board::Action::Launch(options) => {
-                    message = match cli::create(&options) {
-                        Ok(()) => format!("Started {}.", options.task),
-                        Err(error) => error.to_string(),
-                    };
+                    status = cli::create(&options)
+                        .map(|()| format!("Started {}.", options.task))
+                        .map_err(|error| error.to_string());
                 }
             }
         }

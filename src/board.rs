@@ -1,5 +1,6 @@
 use crate::{
     Result,
+    compose::{self, Modal},
     launcher::{Launcher, Outcome, PasteMode},
     optional, process,
 };
@@ -54,10 +55,14 @@ pub struct Board {
     collapsed: BTreeSet<String>,
     pane: String,
     inbox: Vec<(String, String, String)>,
+    /// An error for the footer.
     message: String,
+    /// A success report for the footer.
+    notice: String,
     /// The selection changed, so the detail panel needs new data.
     stale: bool,
     launcher: Option<Launcher>,
+    modal: Option<Modal>,
 }
 
 fn members(group: &Value) -> &[Value] {
@@ -215,7 +220,66 @@ impl Board {
         Ok(())
     }
 
+    /// The selected agent's name and team task, when it can receive messages.
+    fn mail_target(&self) -> std::result::Result<(String, String), String> {
+        let name = self
+            .agent()
+            .map(|agent| optional(agent, "name"))
+            .unwrap_or("");
+        crate::view::team_name(name)
+            .map(|(task, _)| (name.to_owned(), task.to_owned()))
+            .ok_or_else(|| "Only an agent in a team has a mailbox.".to_owned())
+    }
+
+    fn modal_key(&mut self, key: KeyEvent) {
+        let Some(modal) = &mut self.modal else {
+            return;
+        };
+        match modal.key(key) {
+            Some(compose::Outcome::Close) => self.modal = None,
+            Some(compose::Outcome::Send { to, text }) => {
+                let task = crate::view::team_name(&to)
+                    .map_or("", |(task, _)| task)
+                    .to_owned();
+                match crate::mail::deliver(&task, &to, &text, false) {
+                    Ok((id, name, _)) => {
+                        self.modal = None;
+                        self.notice = format!("Sent {id} to {name}.");
+                        self.stale = true;
+                    }
+                    Err(error) => modal.fail(error.to_string()),
+                }
+            }
+            None => {}
+        }
+    }
+
+    fn read_next(&mut self) {
+        let Some((id, _, _)) = self.inbox.first().cloned() else {
+            self.message = "No unread messages.".into();
+            return;
+        };
+        match self.mail_target() {
+            Ok((_, task)) => match crate::mail::open(&task, &id) {
+                Ok(body) => {
+                    self.modal = Some(Modal::Message {
+                        id,
+                        body,
+                        scroll: 0,
+                    });
+                    self.stale = true;
+                }
+                Err(error) => self.message = error.to_string(),
+            },
+            Err(error) => self.message = error,
+        }
+    }
+
     fn key(&mut self, key: KeyEvent) -> Result<Option<Action>> {
+        if self.modal.is_some() {
+            self.modal_key(key);
+            return Ok(None);
+        }
         if let Some(launcher) = &mut self.launcher {
             match launcher.key(key) {
                 Some(Outcome::Cancel) => self.launcher = None,
@@ -225,6 +289,7 @@ impl Board {
             return Ok(None);
         }
         self.message.clear();
+        self.notice.clear();
         let before = self.list.selected();
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => return Ok(Some(Action::Quit)),
@@ -233,6 +298,11 @@ impl Board {
             }
             KeyCode::Char('n') => self.open(false)?,
             KeyCode::Char('d') => self.open(true)?,
+            KeyCode::Char('m') => match self.mail_target() {
+                Ok((name, _)) => self.modal = Some(Modal::compose(&name)),
+                Err(error) => self.message = error,
+            },
+            KeyCode::Char('r') => self.read_next(),
             KeyCode::Down | KeyCode::Char('j') => self.list.select_next(),
             KeyCode::Up | KeyCode::Char('k') => self.list.select_previous(),
             KeyCode::Home | KeyCode::Char('g') => self.list.select_first(),
@@ -503,6 +573,10 @@ impl Board {
             frame.render_widget(Paragraph::new(self.message.as_str()).fg(Color::Red), area);
             return;
         }
+        if !self.notice.is_empty() {
+            frame.render_widget(Paragraph::new(self.notice.as_str()).fg(Color::Green), area);
+            return;
+        }
         let mut spans = Vec::new();
         for (key, label) in [
             ("↑↓", "move"),
@@ -510,6 +584,8 @@ impl Board {
             ("⏎", "open tab"),
             ("n", "new team"),
             ("d", "new director"),
+            ("m", "message"),
+            ("r", "read"),
             ("q", "quit"),
         ] {
             spans.push(Span::styled(key, Style::new().fg(ACCENT).bold()));
@@ -535,11 +611,13 @@ fn panel(title: &str, focused: bool) -> Block<'_> {
     }
 }
 
-pub fn run(message: String) -> Result<Action> {
-    let mut board = Board {
-        message,
-        ..Board::default()
-    };
+/// Open the board. `status` reports the last launch: a notice or an error.
+pub fn run(status: std::result::Result<String, String>) -> Result<Action> {
+    let mut board = Board::default();
+    match status {
+        Ok(notice) => board.notice = notice,
+        Err(error) => board.message = error,
+    }
     board.refresh();
     ratatui::run(|terminal| -> Result<Action> {
         let _paste = PasteMode::on()?;
@@ -553,6 +631,9 @@ pub fn run(message: String) -> Result<Action> {
                 if let Some(launcher) = &board.launcher {
                     launcher.draw(frame);
                 }
+                if let Some(modal) = &board.modal {
+                    modal.draw(frame);
+                }
             })?;
             if event::poll(Duration::from_millis(250))? {
                 match event::read()? {
@@ -562,7 +643,9 @@ pub fn run(message: String) -> Result<Action> {
                         Err(error) => board.message = error.to_string(),
                     },
                     Event::Paste(text) => {
-                        if let Some(launcher) = &mut board.launcher {
+                        if let Some(modal) = &mut board.modal {
+                            modal.insert(&text);
+                        } else if let Some(launcher) = &mut board.launcher {
                             launcher.insert(&text);
                         }
                     }
