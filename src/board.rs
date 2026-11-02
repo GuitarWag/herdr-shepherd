@@ -254,6 +254,72 @@ impl Board {
         }
     }
 
+    /// Split a pane after the team's last worker and register a worker in it.
+    fn add_worker(&mut self) -> Result<()> {
+        let Some(row) = self.selected_row() else {
+            return Ok(());
+        };
+        let group = &self.groups[row.group];
+        if optional(group, "kind") != "herd" || is_director(group) {
+            self.message = "Select a team to add a worker.".into();
+            return Ok(());
+        }
+        let task = optional(group, "subject").to_owned();
+        let list = members(group);
+        let Some(boss) = list.iter().find(|m| optional(m, "role") == "boss") else {
+            self.message = format!("The team {task} has no boss.");
+            return Ok(());
+        };
+        // Names sort w10 before w2, so compare the numbers.
+        let last = list
+            .iter()
+            .filter_map(|m| {
+                Some((
+                    optional(m, "role").strip_prefix('w')?.parse::<u64>().ok()?,
+                    m,
+                ))
+            })
+            .max_by_key(|(number, _)| *number)
+            .map(|(_, m)| m);
+        let (target, direction, ratio) = match last {
+            Some(worker) => (optional(worker, "pane_id"), "down", "0.5"),
+            None => (optional(boss, "pane_id"), "right", "0.35"),
+        };
+        let agent = last
+            .map(|worker| optional(worker, "agent"))
+            .filter(|agent| matches!(*agent, "claude" | "codex"))
+            .unwrap_or("claude")
+            .to_owned();
+        let split = process::herdr(&[
+            "pane",
+            "split",
+            target,
+            "--direction",
+            direction,
+            "--ratio",
+            ratio,
+            "--cwd",
+            optional(boss, "cwd"),
+            "--no-focus",
+        ])?;
+        let pane = crate::string(&split["pane"], "pane_id")?.to_owned();
+        crate::cli::wait_for_prompt(&pane)?;
+        let command = process::shell_command(&[
+            std::env::current_exe()?
+                .to_str()
+                .ok_or("The command path must use UTF-8.")?
+                .to_owned(),
+            task.clone(),
+            "--add-worker".into(),
+            "--worker-agent".into(),
+            agent.clone(),
+        ]);
+        process::herdr(&["pane", "send-text", &pane, &command])?;
+        process::herdr(&["pane", "send-keys", &pane, "Enter"])?;
+        self.notice = format!("Adding a {agent} worker to {task}.");
+        Ok(())
+    }
+
     fn read_next(&mut self) {
         let Some((id, _, _)) = self.inbox.first().cloned() else {
             self.message = "No unread messages.".into();
@@ -303,6 +369,7 @@ impl Board {
                 Err(error) => self.message = error,
             },
             KeyCode::Char('r') => self.read_next(),
+            KeyCode::Char('a') => self.add_worker()?,
             KeyCode::Down | KeyCode::Char('j') => self.list.select_next(),
             KeyCode::Up | KeyCode::Char('k') => self.list.select_previous(),
             KeyCode::Home | KeyCode::Char('g') => self.list.select_first(),
@@ -584,6 +651,7 @@ impl Board {
             ("⏎", "open tab"),
             ("n", "new team"),
             ("d", "new director"),
+            ("a", "add worker"),
             ("m", "message"),
             ("r", "read"),
             ("q", "quit"),

@@ -112,6 +112,7 @@ The right panel shows the screen and the unread messages of the selected agent.
 | Enter | Focus the herdr tab of the selected agent. |
 | `n` | Open the launcher for a new team. |
 | `d` | Open the launcher for a new director. |
+| `a` | Add a worker to the selected team. |
 | `m` | Write a message to the selected agent. |
 | `r` | Open the oldest unread message of the selected agent and mark it read. |
 | `q` or Esc | Quit. |
@@ -119,6 +120,9 @@ The right panel shows the screen and the unread messages of the selected agent.
 In the message box, Enter sends the message, and Ctrl+J or Alt+Enter starts a new line.
 The board sends the message with the same mailbox as `--send`, so the agent receives a one-line pointer.
 Only an agent in a team has a mailbox.
+
+`a` splits a new pane below the team's last worker, or beside the boss when the team has no workers.
+The new pane runs `herdr-shepherd <task> --add-worker` with the agent type of the last worker, or Claude Code.
 
 ## Launcher
 
