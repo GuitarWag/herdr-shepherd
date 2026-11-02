@@ -3,9 +3,9 @@ mod cli;
 mod install;
 mod interactive;
 mod join;
+mod launcher;
 mod mail;
 mod process;
-mod tui;
 mod view;
 
 use serde_json::Value;
@@ -56,10 +56,18 @@ fn run(args: &[String], viewer: bool) -> Result<()> {
         && std::io::stdout().is_terminal()
         && env::var("TERM").as_deref() != Ok("dumb")
     {
-        return match board::run()? {
-            board::Action::NewTeam => interactive::run(false),
-            board::Action::Quit => Ok(()),
-        };
+        let mut message = String::new();
+        loop {
+            match board::run(message)? {
+                board::Action::Quit => return Ok(()),
+                board::Action::Launch(options) => {
+                    message = match cli::create(&options) {
+                        Ok(()) => format!("Started {}.", options.task),
+                        Err(error) => error.to_string(),
+                    };
+                }
+            }
+        }
     }
     if args.iter().any(|arg| arg == "--interactive") {
         if args

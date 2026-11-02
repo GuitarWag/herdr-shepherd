@@ -16,7 +16,7 @@ Each agent keeps its own process, context, and permissions.
 `herdr` supplies the terminal communication commands.
 The shared [agent skill](skills/herdr-shepherd/SKILL.md) defines how bosses and workers use them to communicate.
 The Rust CLI registers the team and helps agents find their boss or workers.
-The interactive setup helps you start those sessions in a selected folder.
+The board and its launcher help you start those sessions in a selected folder.
 
 ## How agents communicate
 
@@ -92,51 +92,11 @@ A server that inherits agent environment variables can prevent Claude Code from 
 herdr
 ```
 
-Inside herdr, open the interactive setup:
+Inside herdr, open the board:
 
 ```sh
 herdr-shepherd
 ```
-
-## Interactive setup
-
-The [Ratatui](https://ratatui.rs) form shows the task name, working folder, agents, worker count, and command preview.
-The defaults are `my-task`, your current folder, Claude Code for both roles, and three workers.
-
-| Key | Action |
-| --- | --- |
-| Tab, Up, Down | Select a field. |
-| Enter | Validate the field and advance. Review after the last field. |
-| Left, Right | Switch an agent field between `claude` and `codex`. |
-| Type | Replace a field's default, then append text. |
-| Backspace | Delete the last character. Return from review to editing. |
-| Ctrl+U | Clear the selected field. |
-| Esc, Ctrl+C | Cancel setup. |
-
-Enter `1` or `claude` for Claude Code.
-Enter `2` or `codex` for Codex.
-Add `:model` to an agent to select its model, for example `codex:gpt-6.1-sol`.
-Left and Right change an agent field only when its value is `claude` or `codex`.
-The folder accepts relative paths, absolute paths, and `~`.
-A single worker agent applies to every worker.
-The Worker agent field also accepts a comma-separated list, for example `codex:gpt-6.1-sol,codex,claude:opus`.
-A list with two or more entries sets the worker count when you validate the field.
-If you type a different worker count, the form shows an error.
-Press Enter on the review screen to confirm the team.
-The form restores the terminal before it starts the agents.
-The form requires at least 64 columns and 24 rows.
-
-To preview the setup without creating panes:
-
-```sh
-herdr-shepherd --interactive --dry-run
-```
-
-`--interactive` accepts only `--dry-run` and help options.
-Piped input and terminals with `TERM=dumb` use text prompts.
-The text prompts accept blank answers for defaults and `n` to cancel at confirmation.
-The text prompts accept the same agent entries and worker lists as the form.
-Use explicit command options in scripts.
 
 ## Board
 
@@ -150,8 +110,44 @@ The right panel shows the screen and the unread messages of the selected agent.
 | Up/Down or `j`/`k` | Select a row. |
 | Left/Right or `h`/`l` | Fold or unfold a group. |
 | Enter | Focus the herdr tab of the selected agent. |
-| `n` | Open the setup form for a new team. |
+| `n` | Open the launcher for a new team. |
+| `d` | Open the launcher for a new director. |
 | `q` or Esc | Quit. |
+
+## Launcher
+
+The launcher is a card over the board.
+It sets the kind (team or director), task name, folder, director, boss, and workers.
+The command preview at the bottom of the card changes as you edit.
+When the selected row belongs to a director, a new team reports to that director.
+
+| Key | Action |
+| --- | --- |
+| Up/Down or Tab | Select a field. |
+| Left/Right or Space | Change a choice: kind, director, agent, model, or worker count. |
+| `+` and `-` | Change the worker count. |
+| Type | Edit the name, the folder, or a model. Typing in a model field enters a custom model. |
+| Tab in the folder field | Complete the folder name. |
+| Enter | Start the team. |
+| Esc or Ctrl+C | Close the launcher. |
+
+Each worker has its own agent and model.
+A model shown in grey is the default for that role.
+The launcher shows at most eight workers; use command options for a larger team.
+After the team starts, the board opens again and shows `Started <task>.`
+
+To open the launcher alone, or to preview the commands without creating panes:
+
+```sh
+herdr-shepherd --interactive
+herdr-shepherd --interactive --dry-run
+```
+
+`--interactive` accepts only `--dry-run` and help options.
+Piped input and terminals with `TERM=dumb` use text prompts.
+The text prompts accept blank answers for defaults and `n` to cancel at confirmation.
+The text prompts accept the agent entries `claude`, `codex`, `1`, `2`, and `AGENT:MODEL`, and a comma-separated worker list.
+Use explicit command options in scripts.
 
 ## Command options
 

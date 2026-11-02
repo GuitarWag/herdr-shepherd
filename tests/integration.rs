@@ -265,14 +265,14 @@ fn no_arguments_open_the_board_and_quit_restores_the_terminal() {
     }
 }
 
-fn board_new_team_opens_the_form() {
+fn board_launcher_starts_a_team_and_returns_to_the_board() {
     let f = Fixture::new();
-    let (code, text) = terminal(&f, &[], b"n\x1b", (28, 100));
+    let (code, text) = terminal(&f, &[], b"n\x1bnboard-team\rq", (28, 100));
     assert_eq!(code, 0, "{text}");
-    for expected in ["Task", "Setup cancelled.", "\x1b[?1049l"] {
+    for expected in ["new team", "Started board-team.", "\x1b[?1049l"] {
         assert!(text.contains(expected), "{text}");
     }
-    assert!(f.mutations().is_empty());
+    assert_eq!(f.launches().len(), 4);
 }
 
 fn ratatui_preview_uses_choices_and_restores_the_terminal() {
@@ -280,20 +280,21 @@ fn ratatui_preview_uses_choices_and_restores_the_terminal() {
     let (code, text) = terminal(
         &f,
         &["--interactive", "--dry-run"],
-        b"tui-team\r\r\x1b[C\r\x1b[C\r0\r\r",
+        b"tui-team\x1b[B\x1b[B\x1b[C\x1b[B\x1b[B\x1b[D\x1b[D\x1b[D\r",
         (28, 100),
     );
     assert_eq!(code, 0, "{text}");
     for expected in ["gpt-6-astra", "tui-team-boss", "\x1b[?1049l"] {
         assert!(text.contains(expected), "{text}");
     }
-    assert!(f.calls().is_empty());
+    assert!(!text.contains("tui-team-w1"), "{text}");
+    assert!(f.mutations().is_empty());
 }
 
 fn ratatui_restores_the_terminal_before_a_launch_error() {
     let mut f = Fixture::new();
     f.env.insert("HERD_TEST_ERROR".into(), "tab create".into());
-    let (code, text) = terminal(&f, &["--interactive"], b"\r\r\r\r0\r\r", (28, 100));
+    let (code, text) = terminal(&f, &["--interactive"], b"err-team\r", (28, 100));
     assert_eq!(code, 2, "{text}");
     assert!(text.contains("requested operation failed"));
     assert!(text.contains("\x1b[?1049l"));
@@ -304,7 +305,7 @@ fn small_terminal_can_cancel_without_creating_a_team() {
     let (code, text) = terminal(&f, &["--interactive"], b"\r\r\x1b", (10, 40));
     assert_eq!(code, 0, "{text}");
     assert!(text.contains("Resize"));
-    assert!(f.calls().is_empty());
+    assert!(f.mutations().is_empty());
 }
 
 fn default_launch_preserves_claude_models_and_names() {
@@ -1458,7 +1459,7 @@ fn main() {
         interactive_help_does_not_prompt,
         interactive_cancel_eof_and_conflicting_options_create_no_panes,
         no_arguments_open_the_board_and_quit_restores_the_terminal,
-        board_new_team_opens_the_form,
+        board_launcher_starts_a_team_and_returns_to_the_board,
         ratatui_preview_uses_choices_and_restores_the_terminal,
         ratatui_restores_the_terminal_before_a_launch_error,
         small_terminal_can_cancel_without_creating_a_team,
