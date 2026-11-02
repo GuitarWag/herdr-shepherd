@@ -127,12 +127,16 @@ pub fn deliver(task: &str, to: &str, text: &str, dry: bool) -> Result<(String, S
         SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis(),
         std::process::id()
     );
+    // The pointer stays short and plain, so the agent input receives it complete.
+    let pointer = format!("Message {id} from {from}. Run: herdr-shepherd {task} --read {id}");
+    // Agent names are untrusted; a newline would submit the pointer early.
+    if pointer.chars().any(char::is_control) || name.chars().any(char::is_control) {
+        return Err("An agent name contains a control character.".into());
+    }
     let path = mailbox(task)?.join(format!("{id}.md"));
     if !dry {
         fs::write(&path, format!("From: {from}\nTo: {name}\n\n{text}\n"))?;
     }
-    // The pointer stays short and plain, so the agent input receives it complete.
-    let pointer = format!("Message {id} from {from}. Run: herdr-shepherd {task} --read {id}");
     process::run(dry, &["agent", "send", &name, &pointer])?;
     process::run(dry, &["pane", "send-keys", &pane, "Enter"])?;
     Ok((id, name, path))

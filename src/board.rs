@@ -265,6 +265,11 @@ impl Board {
             return Ok(());
         }
         let task = optional(group, "subject").to_owned();
+        // Agent names are untrusted; a newline would submit a shell line.
+        if let Err(error) = crate::cli::task_name(&task) {
+            self.message = error.to_string();
+            return Ok(());
+        }
         let list = members(group);
         let Some(boss) = list.iter().find(|m| optional(m, "role") == "boss") else {
             self.message = format!("The team {task} has no boss.");
@@ -314,6 +319,9 @@ impl Board {
             "--worker-agent".into(),
             agent.clone(),
         ]);
+        if command.chars().any(char::is_control) {
+            return Err("The worker command contains a control character.".into());
+        }
         process::herdr(&["pane", "send-text", &pane, &command])?;
         process::herdr(&["pane", "send-keys", &pane, "Enter"])?;
         self.notice = format!("Adding a {agent} worker to {task}.");
