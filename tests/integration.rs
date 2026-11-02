@@ -333,6 +333,24 @@ fn board_adds_a_worker_after_the_last_worker() {
         .unwrap();
     assert!(typed[3].ends_with("herdr-shepherd test --add-worker --worker-agent claude"));
     assert!(calls.iter().any(|call| call[..2] == ["pane", "send-keys"]));
+    f.save_agents(&json!([{"pane_id": "evil", "name": "x\ntouch pwned\n-boss",
+        "agent": "claude", "agent_status": "idle", "tab_id": "t", "cwd": "/tmp"}]));
+    f.clear_calls();
+    let (code, text) = terminal(&f, &[], b"aq", (28, 120));
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("The task name starts with"), "{text}");
+    assert!(!f.calls().iter().any(
+        |call| matches!(&call[..2], [a, b] if a == "pane" && (b == "split" || b == "send-text"))
+    ));
+    f.save_agents(&json!([
+        {"pane_id": "current-pane", "name": "me\nrm -rf ~"},
+        {"pane_id": "ok-pane", "name": "ok-boss"}
+    ]));
+    let result = f.run(&["ok", "--send", "ok-boss", "--message", "hi"]);
+    status(&result, 2);
+    assert!(stderr(&result).contains("control character"));
+    let mailbox = f.home.join(".local/state/herdr-shepherd/mail/ok");
+    assert!(!mailbox.exists() || fs::read_dir(mailbox).unwrap().next().is_none());
 }
 
 fn ratatui_preview_uses_choices_and_restores_the_terminal() {
