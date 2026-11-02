@@ -392,7 +392,7 @@ Run herdr-shepherd {task} --read between worker rounds.",
 
 /// The shell discards input that arrives before its line editor starts.
 /// A rendered prompt shows that the line editor is ready.
-fn wait_for_prompt(pane: &str) -> Result<()> {
+pub fn wait_for_prompt(pane: &str) -> Result<()> {
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
         let screen = process::output(

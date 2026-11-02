@@ -161,6 +161,9 @@ pub fn groups(subject: Option<&str>) -> Result<Vec<Value>> {
         agents.sort_by_key(|agent| {
             (
                 role(agent) != "boss",
+                role(agent)
+                    .strip_prefix('w')
+                    .and_then(|number| number.parse::<u64>().ok()),
                 default(optional(agent, "name"), optional(agent, "pane_id")),
             )
         });

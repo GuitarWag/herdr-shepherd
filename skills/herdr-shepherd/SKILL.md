@@ -22,6 +22,7 @@ Use Left/Right or Space to change a choice, and `+` or `-` to change the worker 
 Type to edit the name, the folder, or a custom model.
 Press Enter to start the team, and press Esc to close the launcher.
 On the board, `m` writes a message to the selected agent, and `r` opens its oldest unread message.
+On the board, `a` adds a worker to the selected team in a new pane.
 Piped input and `TERM=dumb` use text prompts.
 Use `herdr-shepherd --interactive --dry-run` to preview commands without creating a team.
 Agents should use explicit command options for automated tasks.

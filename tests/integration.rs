@@ -306,6 +306,35 @@ fn board_sends_and_reads_messages() {
     assert!(!stdout(&unread).contains("Read the tests."));
 }
 
+fn board_adds_a_worker_after_the_last_worker() {
+    let mut f = Fixture::new();
+    f.team(None, None, &[2, 10]);
+    let team: Value = serde_json::from_str(&stdout(&f.run(&["test", "--team", "--json"]))).unwrap();
+    let names: Vec<&str> = team[0]["members"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|member| member["name"].as_str().unwrap())
+        .collect();
+    assert_eq!(names, ["test-boss", "test-w2", "test-w10"]);
+    let (code, text) = terminal(&f, &[], b"aq", (28, 120));
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("Adding a claude worker to test."), "{text}");
+    let calls = f.calls();
+    let split = calls
+        .iter()
+        .find(|call| call[..2] == ["pane", "split"])
+        .unwrap();
+    assert_eq!(split[2], "pane-10");
+    assert_eq!(split[4], "down");
+    let typed = calls
+        .iter()
+        .find(|call| call[..2] == ["pane", "send-text"])
+        .unwrap();
+    assert!(typed[3].ends_with("herdr-shepherd test --add-worker --worker-agent claude"));
+    assert!(calls.iter().any(|call| call[..2] == ["pane", "send-keys"]));
+}
+
 fn ratatui_preview_uses_choices_and_restores_the_terminal() {
     let f = Fixture::new();
     let (code, text) = terminal(
@@ -1492,6 +1521,7 @@ fn main() {
         no_arguments_open_the_board_and_quit_restores_the_terminal,
         board_launcher_starts_a_team_and_returns_to_the_board,
         board_sends_and_reads_messages,
+        board_adds_a_worker_after_the_last_worker,
         ratatui_preview_uses_choices_and_restores_the_terminal,
         ratatui_restores_the_terminal_before_a_launch_error,
         small_terminal_can_cancel_without_creating_a_team,
