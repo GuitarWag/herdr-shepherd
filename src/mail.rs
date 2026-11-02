@@ -84,13 +84,25 @@ fn message_id(value: &str) -> Result<()> {
 }
 
 pub fn send(options: &Options, to: &str, text: &str) -> Result<()> {
+    let (id, name, path) = deliver(&options.task, to, text, options.dry)?;
+    if options.dry {
+        println!("Dry run. No message is stored.");
+    } else {
+        println!("Sent {id} to {name}: {}", path.display());
+    }
+    Ok(())
+}
+
+/// Store a message and point the agent at it. Returns the ID, target name and file.
+/// `task` resolves `boss` and `wN`, and owns messages to agents outside a team.
+pub fn deliver(task: &str, to: &str, text: &str, dry: bool) -> Result<(String, String, PathBuf)> {
     let text = text.trim();
     if text.is_empty() {
         return Err("The message is empty.".into());
     }
-    let name = member(&options.task, to);
-    let agents = if options.dry { Vec::new() } else { agents()? };
-    let pane = if options.dry {
+    let name = member(task, to);
+    let agents = if dry { Vec::new() } else { agents()? };
+    let pane = if dry {
         "<pane>".to_owned()
     } else {
         let target = agents
@@ -109,26 +121,21 @@ pub fn send(options: &Options, to: &str, text: &str) -> Result<()> {
     // The recipient team owns the message, so its --read list shows it.
     let task = crate::view::team_name(&name)
         .map(|(task, _)| task)
-        .unwrap_or(&options.task);
+        .unwrap_or(task);
     let id = format!(
         "m{}-{}",
         SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis(),
         std::process::id()
     );
     let path = mailbox(task)?.join(format!("{id}.md"));
-    if !options.dry {
+    if !dry {
         fs::write(&path, format!("From: {from}\nTo: {name}\n\n{text}\n"))?;
     }
     // The pointer stays short and plain, so the agent input receives it complete.
     let pointer = format!("Message {id} from {from}. Run: herdr-shepherd {task} --read {id}");
-    process::run(options.dry, &["agent", "send", &name, &pointer])?;
-    process::run(options.dry, &["pane", "send-keys", &pane, "Enter"])?;
-    if options.dry {
-        println!("Dry run. No message is stored.");
-    } else {
-        println!("Sent {id} to {name}: {}", path.display());
-    }
-    Ok(())
+    process::run(dry, &["agent", "send", &name, &pointer])?;
+    process::run(dry, &["pane", "send-keys", &pane, "Enter"])?;
+    Ok((id, name, path))
 }
 
 /// The unread messages of a task for `me` as (ID, sender, first line).
@@ -165,18 +172,23 @@ pub fn unread(task: &str, me: &str) -> Result<Vec<(String, String, String)>> {
     Ok(messages)
 }
 
+/// Return a message and mark it read.
+pub fn open(task: &str, id: &str) -> Result<String> {
+    let dir = mailbox(task)?;
+    message_id(id)?;
+    let unread = dir.join(format!("{id}.md"));
+    let read = dir.join(format!("{id}.read.md"));
+    if unread.is_file() {
+        fs::rename(&unread, &read)?;
+    } else if !read.is_file() {
+        return Err(format!("No message {id} in {}.", dir.display()).into());
+    }
+    Ok(fs::read_to_string(read)?)
+}
+
 pub fn read(options: &Options, id: Option<&str>) -> Result<()> {
-    let dir = mailbox(&options.task)?;
     if let Some(id) = id {
-        message_id(id)?;
-        let unread = dir.join(format!("{id}.md"));
-        let read = dir.join(format!("{id}.read.md"));
-        if unread.is_file() {
-            fs::rename(&unread, &read)?;
-        } else if !read.is_file() {
-            return Err(format!("No message {id} in {}.", dir.display()).into());
-        }
-        print!("{}", fs::read_to_string(read)?);
+        print!("{}", open(&options.task, id)?);
         return Ok(());
     }
     let me = sender(&agents()?);

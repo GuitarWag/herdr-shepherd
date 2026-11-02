@@ -275,6 +275,37 @@ fn board_launcher_starts_a_team_and_returns_to_the_board() {
     assert_eq!(f.launches().len(), 4);
 }
 
+fn board_sends_and_reads_messages() {
+    let mut f = Fixture::new();
+    f.team(None, None, &[1]);
+    status(
+        &f.run(&["--send", "boss", "--message", "Read the tests."]),
+        0,
+    );
+    f.clear_calls();
+    let (code, text) = terminal(&f, &[], b"rqmhello boss\rq", (28, 100));
+    assert_eq!(code, 0, "{text}");
+    for expected in ["To: test-boss", "message to test-boss", "Sent m"] {
+        assert!(text.contains(expected), "{text}");
+    }
+    let calls = f.calls();
+    let send = calls
+        .iter()
+        .find(|call| call[..2] == ["agent", "send"])
+        .unwrap();
+    assert_eq!(send[2], "test-boss");
+    let id = send[3].rsplit(' ').next().unwrap();
+    let mailbox = f.home.join(".local/state/herdr-shepherd/mail/test");
+    assert!(
+        fs::read_to_string(mailbox.join(format!("{id}.md")))
+            .unwrap()
+            .ends_with("\n\nhello boss\n")
+    );
+    let unread = f.run(&["test", "--read"]);
+    assert!(stdout(&unread).contains("hello boss"));
+    assert!(!stdout(&unread).contains("Read the tests."));
+}
+
 fn ratatui_preview_uses_choices_and_restores_the_terminal() {
     let f = Fixture::new();
     let (code, text) = terminal(
@@ -1460,6 +1491,7 @@ fn main() {
         interactive_cancel_eof_and_conflicting_options_create_no_panes,
         no_arguments_open_the_board_and_quit_restores_the_terminal,
         board_launcher_starts_a_team_and_returns_to_the_board,
+        board_sends_and_reads_messages,
         ratatui_preview_uses_choices_and_restores_the_terminal,
         ratatui_restores_the_terminal_before_a_launch_error,
         small_terminal_can_cancel_without_creating_a_team,
