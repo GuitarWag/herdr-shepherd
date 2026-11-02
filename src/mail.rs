@@ -131,6 +131,40 @@ pub fn send(options: &Options, to: &str, text: &str) -> Result<()> {
     Ok(())
 }
 
+/// The unread messages of a task for `me` as (ID, sender, first line).
+/// The name `user` receives every message.
+pub fn unread(task: &str, me: &str) -> Result<Vec<(String, String, String)>> {
+    let dir = mailbox(task)?;
+    let mut paths: Vec<_> = fs::read_dir(&dir)?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| {
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("");
+            name.ends_with(".md") && !name.ends_with(".read.md")
+        })
+        .collect();
+    paths.sort();
+    let mut messages = Vec::new();
+    for path in paths {
+        let content = fs::read_to_string(&path)?;
+        let mut lines = content.lines();
+        let from = lines.next().unwrap_or("").trim_start_matches("From: ");
+        let to = lines.next().unwrap_or("").trim_start_matches("To: ");
+        if me != "user" && to != me {
+            continue;
+        }
+        let first = lines.find(|line| !line.trim().is_empty()).unwrap_or("");
+        let id = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("");
+        messages.push((id.to_owned(), from.to_owned(), first.to_owned()));
+    }
+    Ok(messages)
+}
+
 pub fn read(options: &Options, id: Option<&str>) -> Result<()> {
     let dir = mailbox(&options.task)?;
     if let Some(id) = id {
@@ -146,35 +180,11 @@ pub fn read(options: &Options, id: Option<&str>) -> Result<()> {
         return Ok(());
     }
     let me = sender(&agents()?);
-    let mut paths: Vec<_> = fs::read_dir(&dir)?
-        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
-        .filter(|path| {
-            let name = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("");
-            name.ends_with(".md") && !name.ends_with(".read.md")
-        })
-        .collect();
-    paths.sort();
-    let mut count = 0;
-    for path in paths {
-        let content = fs::read_to_string(&path)?;
-        let mut lines = content.lines();
-        let from = lines.next().unwrap_or("");
-        let to = lines.next().unwrap_or("");
-        if me != "user" && to != format!("To: {me}") {
-            continue;
-        }
-        let first = lines.find(|line| !line.trim().is_empty()).unwrap_or("");
-        let id = path
-            .file_stem()
-            .and_then(|stem| stem.to_str())
-            .unwrap_or("");
-        println!("{id}  {from}  {first}");
-        count += 1;
+    let messages = unread(&options.task, &me)?;
+    for (id, from, first) in &messages {
+        println!("{id}  From: {from}  {first}");
     }
-    if count == 0 {
+    if messages.is_empty() {
         println!("No unread messages for {me}.");
     }
     Ok(())

@@ -253,16 +253,26 @@ fn interactive_cancel_eof_and_conflicting_options_create_no_panes() {
     }
 }
 
-fn no_arguments_open_ratatui_and_cancel_restores_the_terminal() {
+fn no_arguments_open_the_board_and_quit_restores_the_terminal() {
     let f = Fixture::new();
-    for key in [b"\x1b".as_slice(), b"\x03".as_slice()] {
+    for key in [b"q".as_slice(), b"\x03".as_slice()] {
         let (code, text) = terminal(&f, &[], key, (28, 100));
         assert_eq!(code, 0, "{text}");
-        for expected in ["Task", "Setup cancelled.", "\x1b[?1049l"] {
+        for expected in ["herdr-shepherd", "No teams run", "\x1b[?1049l"] {
             assert!(text.contains(expected), "{text}");
         }
-        assert!(f.calls().is_empty());
+        assert!(f.mutations().is_empty());
     }
+}
+
+fn board_new_team_opens_the_form() {
+    let f = Fixture::new();
+    let (code, text) = terminal(&f, &[], b"n\x1b", (28, 100));
+    assert_eq!(code, 0, "{text}");
+    for expected in ["Task", "Setup cancelled.", "\x1b[?1049l"] {
+        assert!(text.contains(expected), "{text}");
+    }
+    assert!(f.mutations().is_empty());
 }
 
 fn ratatui_preview_uses_choices_and_restores_the_terminal() {
@@ -283,7 +293,7 @@ fn ratatui_preview_uses_choices_and_restores_the_terminal() {
 fn ratatui_restores_the_terminal_before_a_launch_error() {
     let mut f = Fixture::new();
     f.env.insert("HERD_TEST_ERROR".into(), "tab create".into());
-    let (code, text) = terminal(&f, &[], b"\r\r\r\r0\r\r", (28, 100));
+    let (code, text) = terminal(&f, &["--interactive"], b"\r\r\r\r0\r\r", (28, 100));
     assert_eq!(code, 2, "{text}");
     assert!(text.contains("requested operation failed"));
     assert!(text.contains("\x1b[?1049l"));
@@ -291,7 +301,7 @@ fn ratatui_restores_the_terminal_before_a_launch_error() {
 
 fn small_terminal_can_cancel_without_creating_a_team() {
     let f = Fixture::new();
-    let (code, text) = terminal(&f, &[], b"\r\r\x1b", (10, 40));
+    let (code, text) = terminal(&f, &["--interactive"], b"\r\r\x1b", (10, 40));
     assert_eq!(code, 0, "{text}");
     assert!(text.contains("Resize"));
     assert!(f.calls().is_empty());
@@ -1342,6 +1352,15 @@ fn director_manages_bosses_and_not_workers() {
     assert!(!f.calls().iter().any(|call| call[..2] == ["pane", "split"]));
     f.clear_calls();
     status(&f.run(&["test", "--under", "org", "--workers", "0"]), 0);
+    let link = f.home.join(".local/state/herdr-shepherd/under/test");
+    assert_eq!(fs::read_to_string(&link).unwrap(), "org");
+    let result = f.run(&["test", "--team", "--json"]);
+    status(&result, 0);
+    let team: Value = serde_json::from_str(&stdout(&result)).unwrap();
+    assert_eq!(team[0]["under"], "org");
+    status(&f.run(&["test", "--workers", "0"]), 0);
+    assert!(!link.exists());
+    status(&f.run(&["test", "--under", "org", "--workers", "0"]), 0);
     assert!(f.launches()[0].last().unwrap().contains(
         "Your director is org-director. Send milestones, blockers and results with: herdr-shepherd test --send org-director."
     ));
@@ -1438,7 +1457,8 @@ fn main() {
         interactive_expands_home_and_allows_zero_workers,
         interactive_help_does_not_prompt,
         interactive_cancel_eof_and_conflicting_options_create_no_panes,
-        no_arguments_open_ratatui_and_cancel_restores_the_terminal,
+        no_arguments_open_the_board_and_quit_restores_the_terminal,
+        board_new_team_opens_the_form,
         ratatui_preview_uses_choices_and_restores_the_terminal,
         ratatui_restores_the_terminal_before_a_launch_error,
         small_terminal_can_cancel_without_creating_a_team,

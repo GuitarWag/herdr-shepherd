@@ -133,11 +133,25 @@ herdr-shepherd --interactive --dry-run
 ```
 
 `--interactive` accepts only `--dry-run` and help options.
-Without arguments, the command opens the setup when its input and output use a terminal.
 Piped input and terminals with `TERM=dumb` use text prompts.
 The text prompts accept blank answers for defaults and `n` to cancel at confirmation.
 The text prompts accept the same agent entries and worker lists as the form.
 Use explicit command options in scripts.
+
+## Board
+
+Run `herdr-shepherd` without arguments in a terminal to open the board.
+The board shows every director, team, and agent on the herdr server, and it refreshes every two seconds.
+Teams that start with `--under` appear under their director.
+The right panel shows the screen and the unread messages of the selected agent.
+
+| Key | Action |
+| --- | --- |
+| Up/Down or `j`/`k` | Select a row. |
+| Left/Right or `h`/`l` | Fold or unfold a group. |
+| Enter | Focus the herdr tab of the selected agent. |
+| `n` | Open the setup form for a new team. |
+| `q` or Esc | Quit. |
 
 ## Command options
 

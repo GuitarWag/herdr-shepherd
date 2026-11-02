@@ -34,7 +34,7 @@ const HELP: &str = "usage: herdr-shepherd [<task>] [options]
 
 One --worker-agent applies to all workers. Multiple entries define each worker.
 A model in an agent entry overrides --boss-model, --worker-model, and --model.
-No arguments opens the terminal form when input and output use a terminal.
+No arguments opens the board when input and output use a terminal.
 An explicit worker count must match a list with multiple entries.
 --team accepts only --json. --add-worker rejects boss options and --workers.
 --team, --add-worker, --send and --read infer the task from the boss in the current folder.
@@ -464,6 +464,7 @@ pub fn create(options: &Options) -> Result<()> {
     };
     if !options.dry {
         crate::mail::clear(&options.task)?;
+        crate::view::set_director(&options.task, &options.under)?;
     }
     let role = if options.director { "director" } else { "boss" };
     let name = format!("{}-{role}", options.task);

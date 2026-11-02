@@ -12,8 +12,9 @@ This package does not create or manage Git worktrees.
 
 ## Open a herd
 
-For a user who wants prompts, run `herdr-shepherd` without arguments in a terminal.
-Use `herdr-shepherd --interactive` to select the setup explicitly.
+For a user who wants to see every team, run `herdr-shepherd` without arguments in a terminal.
+It opens the board, and `n` on the board opens the setup form.
+Use `herdr-shepherd --interactive` to open the setup form directly.
 The Ratatui form shows the task name, working folder, boss agent, worker agent, and worker count.
 Use Tab or Up/Down to select a field.
 Type to replace a default.
