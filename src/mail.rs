@@ -138,6 +138,10 @@ pub fn deliver(task: &str, to: &str, text: &str, dry: bool) -> Result<(String, S
         fs::write(&path, format!("From: {from}\nTo: {name}\n\n{text}\n"))?;
     }
     process::run(dry, &["agent", "send", &name, &pointer])?;
+    // Codex reads an Enter right after fast input as a pasted newline.
+    if !dry {
+        std::thread::sleep(Duration::from_millis(500));
+    }
     process::run(dry, &["pane", "send-keys", &pane, "Enter"])?;
     Ok((id, name, path))
 }
