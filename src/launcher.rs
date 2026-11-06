@@ -76,7 +76,6 @@ pub struct Launcher {
     name: String,
     folder: String,
     /// The folder still holds the default, so typing replaces it.
-    folder_fresh: bool,
     directors: Vec<String>,
     /// The index in `directors` plus one. Zero means no director.
     under: usize,
@@ -149,7 +148,6 @@ impl Launcher {
             director,
             name: String::new(),
             folder: home_short(cwd),
-            folder_fresh: true,
             directors,
             under,
             lead: Pick::new("claude"),
@@ -256,18 +254,14 @@ impl Launcher {
             return;
         }
         let focus = self.focus;
-        let fresh = self.folder_fresh && focus == Field::Folder;
         let preset = self
             .pick(focus)
             .is_some_and(|pick| presets(pick.agent).contains(&pick.model.as_str()));
         if let Some(value) = self.text() {
-            if fresh || (preset && matches!(focus, Field::LeadModel | Field::Model(_))) {
+            if preset && matches!(focus, Field::LeadModel | Field::Model(_)) {
                 value.clear();
             }
             value.push_str(&text);
-        }
-        if focus == Field::Folder {
-            self.folder_fresh = false;
         }
     }
 
@@ -321,10 +315,7 @@ impl Launcher {
                 Err(error) => self.error = error.to_string(),
             },
             KeyCode::Tab if self.focus == Field::Folder => match complete(&self.folder) {
-                Some(value) => {
-                    self.folder = value;
-                    self.folder_fresh = false;
-                }
+                Some(value) => self.folder = value,
                 None => self.step(true),
             },
             KeyCode::Down | KeyCode::Tab => self.step(true),
@@ -335,9 +326,6 @@ impl Launcher {
             KeyCode::Char('+') if self.focus == Field::Count => self.change(true),
             KeyCode::Char(' ') if self.text().is_none() => self.change(true),
             KeyCode::Backspace => {
-                if self.focus == Field::Folder {
-                    self.folder_fresh = false;
-                }
                 if let Some(value) = self.text() {
                     value.pop();
                 }
