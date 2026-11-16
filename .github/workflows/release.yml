@@ -37,7 +37,7 @@ jobs:
           cp target/release/herdr-shepherd dist/herdr-shepherd/bin/
           ln -s herdr-shepherd dist/herdr-shepherd/bin/herd-boss
           ln -s herdr-shepherd dist/herdr-shepherd/bin/herd-view
-          cp -R skills install.sh README.md LICENSE dist/herdr-shepherd/
+          cp -R skills docs install.sh README.md LICENSE dist/herdr-shepherd/
           tar -C dist -czf "dist/$name.tar.gz" herdr-shepherd
           rm -r dist/herdr-shepherd
           ls -l dist

@@ -1,0 +1,125 @@
+<template>
+<!-- Adapted from HyperFrames registry code-terminal-run: deterministic text reveal.
+     This is an explicitly labeled workflow illustration, not a recording of agent output. -->
+<style>
+  #root{position:absolute;inset:0;background:#e7eeeb;color:#152521;font-family:Inter,sans-serif;overflow:hidden}
+  *{box-sizing:border-box}
+  .mono{font-family:"JetBrains Mono",monospace}
+  .heading{position:absolute;left:112px;top:91px;margin:0;font-size:72px;font-weight:650;letter-spacing:-3px;line-height:1.15}
+  .subtitle{position:absolute;left:116px;top:191px;margin:0;font-size:30px;font-weight:450;color:#3d554b}
+  .brand{position:absolute;right:112px;top:111px;font-size:28px;font-weight:600;color:#006b57}
+  .launch{position:absolute;left:112px;right:112px;top:260px;height:70px;display:flex;align-items:center;padding:0 26px;border:2px solid #a6bcb0;border-radius:8px;font-size:28px;background:#f5f8f6;letter-spacing:-.8px}
+  .launch .prompt{color:#006b57;margin-right:18px;font-weight:700}
+  .launch .flag{color:#385d4b}
+  .panel{position:absolute;background:#172822;color:#f0f7f2;border-radius:12px;border:2px solid #2e4b3d;overflow:hidden}
+  .boss{left:112px;top:372px;width:730px;height:374px}
+  .worker{left:1048px;width:760px;height:172px}
+  .worker.one{top:372px}.worker.two{top:574px}
+  .bar{height:62px;padding:0 25px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #3f5b4d;background:#213a2f;font-family:"JetBrains Mono",monospace;font-size:29px;font-weight:550}
+  .bar .kind{font-size:28px;color:#b7d2c2;font-weight:400}
+  .body{position:absolute;inset:85px 25px 20px;font-family:"JetBrains Mono",monospace;font-size:30px;line-height:1.55;letter-spacing:-.8px}
+  .row{margin:0;white-space:nowrap}
+  .muted{color:#b7d2c2}.mint{color:#9ee7c1}
+  .body .label{font-size:28px;color:#b7d2c2;margin-bottom:10px}
+  .reply{position:absolute;left:0;top:119px}
+  .worker .body{top:85px;font-size:29px;line-height:1.5}
+  .worker-task,.worker-done{position:absolute;left:0;top:0;margin:0;white-space:nowrap}
+  .check{color:#9ee7c1}
+  .edges{position:absolute;left:0;top:0;width:1920px;height:1080px;pointer-events:none}
+  .edge{fill:none;stroke:#006b57;stroke-width:5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:400;stroke-dashoffset:400}
+  .edge.return{stroke:#4f7c68;stroke-width:3;stroke-dasharray:400;stroke-dashoffset:400}
+  .edge-label{position:absolute;left:867px;top:524px;width:150px;text-align:center;font-size:28px;color:#385d4b;font-weight:550}
+  .tasks{position:absolute;left:112px;top:792px;width:1696px;height:172px;border-top:2px solid #91aa9b;border-bottom:2px solid #91aa9b}
+  .task-heading{position:absolute;left:0;top:18px;margin:0;font-size:28px;font-weight:650}
+  .task-note{position:absolute;right:0;top:20px;font-size:28px;color:#3d554b;margin:0}
+  .task-line{position:absolute;left:0;right:0;height:44px;display:flex;align-items:center;font-family:"JetBrains Mono",monospace;font-size:28px;letter-spacing:-.6px}
+  .task-line.a{top:65px}.task-line.b{top:113px}
+  .assignee{width:230px;color:#385d4b}
+  .task-name{width:990px}
+  .status{position:absolute;right:0;width:330px;text-align:right;font-weight:650;color:#385d4b}
+  .progress,.done{opacity:0}.done{color:#006b57}
+  .footer{position:absolute;left:112px;right:112px;top:997px;display:flex;justify-content:space-between;font-size:28px;color:#4b6256}
+  .footer strong{font-weight:600;color:#006b57}
+  .goal-cursor{display:inline-block;width:15px;height:31px;background:#9ee7c1;vertical-align:-4px;margin-left:3px}
+</style>
+<div id="root" data-composition-id="code-terminal-run" data-duration="14" data-width="1920" data-height="1080">
+ <div id="workflow-scene" class="clip" data-start="0" data-duration="14" data-track-index="1">
+  <h1 class="heading" data-var-text="headline">One goal. Two workers.</h1>
+  <p class="subtitle">Give the boss a goal. Follow the work.</p>
+  <span class="brand mono">herdr-shepherd + clitasks</span>
+  <div class="launch mono"><span class="prompt">$</span><span>herdr-shepherd auth <span class="flag">--boss-agent</span> codex <span class="flag">--worker-agent</span> claude <span class="flag">--worker-agent</span> codex</span></div>
+  <div class="panel boss">
+   <div class="bar"><span>auth-boss</span><span class="kind">Codex · boss</span></div>
+   <div class="body">
+    <div class="label">YOUR GOAL</div>
+    <p class="row"><span id="goal-text">Add password reset.</span><span id="goal-cursor" class="goal-cursor"></span></p>
+    <div id="boss-delegating" class="reply"><p class="row mint">Split the investigation.</p><p class="row muted">Review before editing.</p></div>
+    <div id="boss-result" class="reply"><p class="row mint">✓ Findings reviewed.</p><p class="row">Plan ready for your review.</p></div>
+   </div>
+  </div>
+  <svg class="edges" viewBox="0 0 1920 1080" aria-hidden="true" data-layout-ignore>
+   <path id="delegate-one" class="edge" d="M842 500 H912 V458 H1040"/><path id="delegate-two" class="edge" d="M842 608 H912 V660 H1040"/>
+   <path id="return-one" class="edge return" d="M1048 476 H944 V520 H854"/><path id="return-two" class="edge return" d="M1048 678 H944 V625 H854"/>
+  </svg>
+  <span id="edge-label" class="edge-label">delegate<br>↓<br>review</span>
+  <div class="panel worker one">
+   <div class="bar"><span>auth-w1</span><span class="kind">Claude Code · worker</span></div>
+   <div class="body"><p id="worker-one-task" class="worker-task muted">Inspect the authentication flow</p><p id="worker-one-done" class="worker-done check">✓ Authentication flow mapped</p></div>
+  </div>
+  <div class="panel worker two">
+   <div class="bar"><span>auth-w2</span><span class="kind">Codex · worker</span></div>
+   <div class="body"><p id="worker-two-task" class="worker-task muted">Review password reset tests</p><p id="worker-two-done" class="worker-done check">✓ Test gaps identified</p></div>
+  </div>
+  <div class="tasks">
+   <h2 class="task-heading">clitasks <span class="mono">/ tasks.md</span></h2><p class="task-note">Updated by the boss</p>
+   <div class="task-line a"><span class="assignee">auth-w1</span><span class="task-name">Inspect the authentication flow</span><span id="todo-one" class="status todo">○ TODO</span><span id="progress-one" class="status progress">◉ IN PROGRESS</span><span id="done-one" class="status done">✓ DONE</span></div>
+   <div class="task-line b"><span class="assignee">auth-w2</span><span class="task-name">Review password reset tests</span><span id="todo-two" class="status todo">○ TODO</span><span id="progress-two" class="status progress">◉ IN PROGRESS</span><span id="done-two" class="status done">✓ DONE</span></div>
+  </div>
+  <div class="footer"><span>Illustrated workflow · dialogue and timing are examples</span><strong id="phase">Launch a team</strong></div>
+ </div>
+</div>
+<script>
+(function(){
+ const tl=gsap.timeline({paused:true});
+ const goal=document.getElementById('goal-text');
+ const full=goal.textContent;
+ const typing={n:0};
+ // Deterministic char-count driver, adapted from code-terminal-run's text-at-time law.
+ tl.fromTo(typing,{n:0},{n:full.length,duration:1.2,ease:'none',onUpdate:()=>{goal.textContent=full.slice(0,Math.floor(typing.n));}},.5);
+ tl.fromTo('#goal-cursor',{opacity:1},{opacity:0,duration:.1},1.9);
+ tl.fromTo('#boss-delegating',{opacity:0},{opacity:1,duration:.25},2.1);
+ tl.fromTo('#edge-label',{opacity:0},{opacity:1,duration:.2},3.1);
+ tl.fromTo('#delegate-one',{strokeDashoffset:400},{strokeDashoffset:0,duration:.5,ease:'power2.out'},3.15);
+ tl.fromTo('#delegate-two',{strokeDashoffset:400},{strokeDashoffset:0,duration:.5,ease:'power2.out'},3.65);
+ tl.fromTo('#worker-one-task',{opacity:0},{opacity:1,duration:.25},3.55);
+ tl.fromTo('#worker-two-task',{opacity:0},{opacity:1,duration:.25},4.05);
+ function status(index,at,complete){
+   tl.set('#todo-'+index,{opacity:0},at);
+   tl.set('#progress-'+index,{opacity:1},at);
+   tl.set('#progress-'+index,{opacity:0},complete);
+   tl.set('#done-'+index,{opacity:1},complete);
+ }
+ status('one',4.5,8.1);status('two',4.8,9.1);
+ tl.set('#phase',{textContent:'Work in parallel'},3.1);
+ tl.set('#worker-one-task',{opacity:0},7.4);
+ tl.fromTo('#worker-one-done',{opacity:0},{opacity:1,duration:.2},7.4);
+ tl.fromTo('#return-one',{strokeDashoffset:400},{strokeDashoffset:0,duration:.5},7.65);
+ tl.set('#worker-two-task',{opacity:0},8.4);
+ tl.fromTo('#worker-two-done',{opacity:0},{opacity:1,duration:.2},8.4);
+ tl.fromTo('#return-two',{strokeDashoffset:400},{strokeDashoffset:0,duration:.5},8.65);
+ tl.set('#boss-delegating',{opacity:0},9.5);
+ tl.fromTo('#boss-result',{opacity:0},{opacity:1,duration:.25},9.5);
+ tl.set('#phase',{textContent:'Review the plan'},9.5);
+ // Restore the opening state at the loop seam; the headline and layout never disappear.
+ tl.to(['#boss-result','#worker-one-done','#worker-two-done','#edge-label'],{opacity:0,duration:.25},13.55);
+ tl.to(['#delegate-one','#delegate-two','#return-one','#return-two'],{strokeDashoffset:400,duration:.25},13.55);
+ tl.set(['#done-one','#done-two'],{opacity:0},13.8);
+ tl.set(['#todo-one','#todo-two'],{opacity:1},13.8);
+ tl.to(typing,{n:0,duration:.2,ease:'none',onUpdate:()=>{goal.textContent=full.slice(0,Math.floor(typing.n));}},13.75);
+ tl.set('#goal-cursor',{opacity:1},13.9);
+ tl.set('#phase',{textContent:'Launch a team'},13.9);
+ window.__timelines=window.__timelines||{};
+ window.__timelines['code-terminal-run']=tl;
+})();
+</script>
+</template>

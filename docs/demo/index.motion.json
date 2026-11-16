@@ -1,0 +1,32 @@
+{
+  "duration": 14,
+  "assertions": [
+    {
+      "kind": "appearsBy",
+      "selector": "#worker-one-task",
+      "bySec": 4
+    },
+    {
+      "kind": "appearsBy",
+      "selector": "#boss-result",
+      "bySec": 10
+    },
+    {
+      "kind": "before",
+      "a": "#worker-one-done",
+      "b": "#boss-result"
+    },
+    {
+      "kind": "staysInFrame",
+      "selector": ".boss"
+    },
+    {
+      "kind": "staysInFrame",
+      "selector": ".worker.one"
+    },
+    {
+      "kind": "staysInFrame",
+      "selector": ".worker.two"
+    }
+  ]
+}
