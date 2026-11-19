@@ -291,9 +291,9 @@ fn board_sends_and_reads_messages() {
     let calls = f.calls();
     let send = calls
         .iter()
-        .find(|call| call[..2] == ["agent", "send"])
+        .find(|call| call[..2] == ["pane", "send-text"] && call[3].starts_with("Message m"))
         .unwrap();
-    assert_eq!(send[2], "test-boss");
+    assert_eq!(send[2], "boss-pane");
     let id = send[3].rsplit(' ').next().unwrap();
     let mailbox = f.home.join(".local/state/herdr-shepherd/mail/test");
     assert!(
@@ -1169,12 +1169,7 @@ fn add_worker_rejects_folder_mismatches_before_registration() {
 
 fn server_errors_stop_launch_even_when_herdr_exits_zero() {
     let mut f = Fixture::new();
-    for operation in [
-        "tab create",
-        "pane rename",
-        "agent rename",
-        "pane send-text",
-    ] {
+    for operation in ["tab create", "pane rename", "pane send-text"] {
         f.clear_calls();
         f.env.insert("HERD_TEST_ERROR".into(), operation.into());
         let result = f.run(&["test", "--workers", "0"]);
@@ -1186,6 +1181,13 @@ fn server_errors_stop_launch_even_when_herdr_exits_zero() {
                 .any(|call| call[..2] == ["pane", "send-keys"])
         );
     }
+    // The agent starts before herdr can name it, so a rename error comes after the launch.
+    f.clear_calls();
+    f.env
+        .insert("HERD_TEST_ERROR".into(), "agent rename".into());
+    let result = f.run(&["test", "--workers", "0"]);
+    assert!(!result.status.success());
+    assert!(stderr(&result).contains("requested operation failed"));
 }
 
 fn empty_pane_ids_stop_launch_before_targeting_another_pane() {
@@ -1335,9 +1337,9 @@ fn send_stores_the_message_and_types_a_short_pointer() {
     let calls = f.calls();
     let send = calls
         .iter()
-        .find(|call| call[..2] == ["agent", "send"])
+        .find(|call| call[..2] == ["pane", "send-text"] && call[3].starts_with("Message m"))
         .unwrap();
-    assert_eq!(send[2], "test-w1");
+    assert_eq!(send[2], "pane-1");
     assert!(send[3].len() < 120, "{}", send[3]);
     assert!(!send[3].contains('$'));
     assert!(calls.contains(&vec![
@@ -1365,9 +1367,9 @@ fn send_stores_the_message_and_types_a_short_pointer() {
     let calls = f.calls();
     let send = calls
         .iter()
-        .find(|call| call[..2] == ["agent", "send"])
+        .find(|call| call[..2] == ["pane", "send-text"] && call[3].starts_with("Message m"))
         .unwrap();
-    assert_eq!(send[2], "test-boss");
+    assert_eq!(send[2], "boss-pane");
     assert!(send[3].contains("from test-w1."));
     assert!(
         calls
@@ -1481,7 +1483,7 @@ fn director_manages_bosses_and_not_workers() {
     let calls = f.calls();
     let send = calls
         .iter()
-        .find(|call| call[..2] == ["agent", "send"])
+        .find(|call| call[..2] == ["pane", "send-text"] && call[3].starts_with("Message m"))
         .unwrap();
     assert!(send[3].contains("from org-director. Run: herdr-shepherd test --read"));
     let id = send[3].rsplit(' ').next().unwrap();

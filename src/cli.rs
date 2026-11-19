@@ -419,6 +419,24 @@ fn launch(options: &Options, pane: &str, agent: &str, name: &str, model: &str) -
     process::run(options.dry, &["pane", "send-keys", pane, "Enter"])
 }
 
+/// Name the agent in a pane after it starts.
+/// herdr knows an agent only once its process runs, so the first tries can fail with "not found".
+fn rename_agent(options: &Options, pane: &str, name: &str) -> Result<()> {
+    let args = ["agent", "rename", pane, name];
+    if options.dry {
+        return process::run(true, &args);
+    }
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        match process::run(false, &args) {
+            Err(error) if error.to_string().contains("not found") && Instant::now() < deadline => {
+                thread::sleep(Duration::from_secs(1));
+            }
+            result => return result,
+        }
+    }
+}
+
 pub fn create(options: &Options) -> Result<()> {
     package_root()?;
     if !options.dry {
@@ -474,7 +492,6 @@ pub fn create(options: &Options) -> Result<()> {
     let role = if options.director { "director" } else { "boss" };
     let name = format!("{}-{role}", options.task);
     process::run(options.dry, &["pane", "rename", &boss, &name])?;
-    process::run(options.dry, &["agent", "rename", &boss, &name])?;
     launch(
         options,
         &boss,
@@ -482,6 +499,7 @@ pub fn create(options: &Options) -> Result<()> {
         &name,
         &options.boss_model,
     )?;
+    rename_agent(options, &boss, &name)?;
     println!("{role}  {boss}  {}", options.boss_agent);
     let mut previous = boss;
     for (index, agent) in options.worker_agents.iter().enumerate() {
@@ -507,8 +525,8 @@ pub fn create(options: &Options) -> Result<()> {
         };
         let name = format!("{}-w{}", options.task, index + 1);
         process::run(options.dry, &["pane", "rename", &pane, &name])?;
-        process::run(options.dry, &["agent", "rename", &pane, &name])?;
         launch(options, &pane, agent, &name, options.worker_model(index))?;
+        rename_agent(options, &pane, &name)?;
         println!("w{}    {pane}  {agent}", index + 1);
         previous = pane;
     }

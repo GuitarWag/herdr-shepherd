@@ -137,7 +137,8 @@ pub fn deliver(task: &str, to: &str, text: &str, dry: bool) -> Result<(String, S
     if !dry {
         fs::write(&path, format!("From: {from}\nTo: {name}\n\n{text}\n"))?;
     }
-    process::run(dry, &["agent", "send", &name, &pointer])?;
+    // herdr 0.8 has no `agent send`; `pane send-text` types the text and does not submit it.
+    process::run(dry, &["pane", "send-text", &pane, &pointer])?;
     // Codex reads an Enter right after fast input as a pasted newline.
     if !dry {
         std::thread::sleep(Duration::from_millis(500));
