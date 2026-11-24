@@ -306,6 +306,16 @@ impl Fixture {
     pub fn save_agents(&self, agents: &Value) {
         write_json(self.root.join("agents.json"), agents);
     }
+    /// Remove the agents of an ended team, so the task can start again.
+    pub fn forget(&self, task: &str) {
+        let mut agents = self.agents();
+        let prefix = format!("{task}-");
+        agents
+            .as_array_mut()
+            .unwrap()
+            .retain(|agent| !agent["name"].as_str().unwrap_or("").starts_with(&prefix));
+        self.save_agents(&agents);
+    }
     pub fn save_panes(&self, panes: &Value) {
         write_json(self.root.join("panes.json"), panes);
     }

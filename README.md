@@ -63,6 +63,28 @@ This creates `auth-boss`, `auth-w1`, and `auth-w2`. Add `--dry-run` to preview a
 
 All agents in a team start in the same folder. Give editing workers separate files, or use one editing worker at a time, to avoid overwriting changes.
 
+## Start from a template
+
+Save the teams that you use often in `~/.config/herdr-shepherd/templates.yaml`:
+
+```yaml
+pay-main:
+  repo: ~/git/ocos-payment
+  base: main
+  boss: claude:fable
+  workers: [claude:opus, claude:opus, codex]
+```
+
+Each template needs `repo`, as an absolute path or a path that starts with `~/`. The `base`, `boss`, and `workers` fields are optional. A `workers: []` list starts only a boss.
+
+Start the team in a new git worktree:
+
+```sh
+hs --template pay-main --branch-name feat/xyz --destination ~/git/pay-xyz
+```
+
+This command creates the branch `feat/xyz` from `main`, adds the worktree, and starts the team `feat-xyz` in it. If the branch exists locally or on `origin`, the command uses it. Without `--destination`, the worktree goes next to the repo as `<repo>-<branch>`. Without `--branch-name`, the team starts in the repo itself. Options on the command line override the template. `hs` is a short name for `herdr-shepherd`. `--branch-name` also works without a template, with `--cwd` or the current folder as the repo.
+
 ## Follow the work
 
 Run `herdr-shepherd` in another herdr pane to keep the board open while the team works. It refreshes every two seconds and shows the selected agent's screen and unread messages.

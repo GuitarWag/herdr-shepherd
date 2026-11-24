@@ -1,4 +1,4 @@
-use crate::{Result, package_root, process, string};
+use crate::{Result, package_root, process, string, template};
 use std::{
     env,
     path::PathBuf,
@@ -11,6 +11,7 @@ const HELP: &str = "usage: herdr-shepherd [<task>] [options]
        herdr-shepherd
        herdr-shepherd --interactive [--dry-run]
        herdr-shepherd --install [check]
+       hs --template NAME [--branch-name BRANCH] [--destination PATH]
   -h, --help                     Show this help.
   --interactive                  Open the launcher. Piped input uses text prompts.
   --add-worker                   Use the current herdr pane as a worker.
@@ -25,6 +26,10 @@ const HELP: &str = "usage: herdr-shepherd [<task>] [options]
   --worker-agent AGENT[:MODEL]   Repeat for an ordered list of workers.
   --workers N                    0 through 9999. Default: 3, or the worker list length.
   --cwd PATH                     Default: the current directory.
+  --template NAME                Start the team from a template in
+                                 ~/.config/herdr-shepherd/templates.yaml.
+  --branch-name BRANCH           Start the team in a new git worktree on BRANCH.
+  --destination PATH             The worktree folder. Default: <repo>-<branch>.
   --boss-model M                 Override the boss model.
   --worker-model M               Override every worker model.
   --model M                      Override all models.
@@ -43,7 +48,10 @@ A new team with the same task name starts with an empty mailbox.
 --director uses --boss-agent and --boss-model and rejects worker options.
 Running agents cannot change their model, folder, or agent type when they join.
 Claude defaults: fable for the boss, opus for workers.
-Codex defaults: gpt-6-astra for the boss, gpt-6.1-sol for workers.";
+Codex defaults: gpt-6-astra for the boss, gpt-6.1-sol for workers.
+A template has repo, and optional base, boss and workers. Options override it.
+--branch-name reuses a branch from local or origin, or makes it from the base.
+The task name defaults to the branch name, and then to the template name.";
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Operation {
@@ -74,6 +82,7 @@ pub struct Options {
     pub director: bool,
     /// The task of the director that this boss reports to.
     pub under: String,
+    pub worktree: Option<template::Worktree>,
 }
 
 pub fn agent(value: &str) -> Result<()> {
@@ -134,7 +143,11 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
         message_id: None,
         director: false,
         under: String::new(),
+        worktree: None,
     };
+    let mut template_name = String::new();
+    let mut branch = String::new();
+    let mut destination = String::new();
     let mut workers: Option<String> = None;
     let mut boss_entry = String::new();
     let mut worker_entries = Vec::new();
@@ -145,16 +158,16 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
         let option = args[index].as_str();
         match option {
             "--workers" | "--cwd" | "--boss-agent" | "--worker-agent" | "--boss-model"
-            | "--worker-model" | "--model" | "--under" => {
+            | "--worker-model" | "--model" | "--under" | "--template" | "--branch-name"
+            | "--destination" => {
                 index += 1;
                 let value = args
                     .get(index)
                     .filter(|value| !value.is_empty() && !value.starts_with("--"))
                     .ok_or_else(|| format!("{option} requires a value"))?;
                 match option {
-                    "--workers" | "--boss-agent" | "--boss-model" | "--under" => {
-                        create_options = true
-                    }
+                    "--workers" | "--boss-agent" | "--boss-model" | "--under" | "--template"
+                    | "--branch-name" | "--destination" => create_options = true,
                     "--cwd" => options.change_directory = true,
                     _ => worker_options = true,
                 }
@@ -166,6 +179,9 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
                     "--boss-model" => options.boss_model = value.clone(),
                     "--worker-model" => options.worker_model = value.clone(),
                     "--under" => options.under = value.clone(),
+                    "--template" => template_name = value.clone(),
+                    "--branch-name" => branch = value.clone(),
+                    "--destination" => destination = value.clone(),
                     _ => {
                         options.boss_model = value.clone();
                         options.worker_model = value.clone();
@@ -224,8 +240,34 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
         }
         index += 1;
     }
+    let mut base = None;
+    if !template_name.is_empty() {
+        if options.change_directory {
+            return Err("--template sets the folder. Do not pass --cwd.".into());
+        }
+        let template = template::load(&template_name)?;
+        options.cwd = template::expand_home(&template.repo)?;
+        base = template.base;
+        if boss_entry.is_empty() {
+            boss_entry = template.boss.unwrap_or_default();
+        }
+        if let Some(entries) = template.workers.filter(|_| worker_entries.is_empty()) {
+            workers.get_or_insert(entries.len().to_string());
+            worker_entries = entries;
+        }
+    }
+    if !destination.is_empty() && branch.is_empty() {
+        return Err("--destination requires --branch-name".into());
+    }
     if options.task.is_empty() && options.operation == Operation::Create {
-        return Err(HELP.into());
+        options.task = if !branch.is_empty() {
+            template::slug(&branch)
+        } else {
+            template_name.clone()
+        };
+        if options.task.is_empty() {
+            return Err(HELP.into());
+        }
     }
     if !options.task.is_empty() {
         task_name(&options.task)?;
@@ -246,6 +288,27 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
         return Err(format!("no such directory: {}", options.cwd.display()).into());
     }
     options.cwd = options.cwd.canonicalize()?;
+    if !branch.is_empty() {
+        let path = if destination.is_empty() {
+            let name = options
+                .cwd
+                .file_name()
+                .ok_or("The repo folder has no name.")?;
+            options.cwd.with_file_name(format!(
+                "{}-{}",
+                name.to_string_lossy(),
+                template::slug(&branch)
+            ))
+        } else {
+            env::current_dir()?.join(template::expand_home(&destination)?)
+        };
+        options.worktree = Some(template::Worktree {
+            repo: std::mem::replace(&mut options.cwd, path.clone()),
+            base,
+            branch,
+            path,
+        });
+    }
     if options.json && options.operation != Operation::Team {
         return Err("--json requires --team".into());
     }
@@ -443,6 +506,7 @@ pub fn create(options: &Options) -> Result<()> {
         for program in std::iter::once("herdr")
             .chain(std::iter::once(options.boss_agent.as_str()))
             .chain(options.worker_agents.iter().map(String::as_str))
+            .chain(options.worktree.as_ref().map(|_| "git"))
         {
             if !process::available(program) {
                 return Err(format!("{program} is not on PATH").into());
@@ -450,20 +514,24 @@ pub fn create(options: &Options) -> Result<()> {
         }
     }
     if !options.dry {
-        // A director and a boss of one task share a mailbox.
-        let other = if options.director { "boss" } else { "director" };
-        let other = format!("{}-{other}", options.task);
+        // Every team of one task shares a mailbox, and launch clears it.
         let agents = process::herdr(&["agent", "list"])?;
-        if agents["agents"]
-            .as_array()
-            .is_some_and(|agents| agents.iter().any(|agent| agent["name"] == other))
-        {
-            return Err(format!(
-                "{other} already uses the task {}. Choose another task name.",
-                options.task
-            )
-            .into());
+        for role in ["boss", "director"] {
+            let other = format!("{}-{role}", options.task);
+            if agents["agents"]
+                .as_array()
+                .is_some_and(|agents| agents.iter().any(|agent| agent["name"] == other))
+            {
+                return Err(format!(
+                    "{other} already uses the task {}. Choose another task name.",
+                    options.task
+                )
+                .into());
+            }
         }
+    }
+    if let Some(worktree) = &options.worktree {
+        worktree.create(options.dry)?;
     }
     let cwd = options
         .cwd

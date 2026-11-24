@@ -12,6 +12,8 @@ ratatui = { version = "0.30.2", default-features = false, features = ["crossterm
 crossterm = "0.29"
 serde_json = "1"
 sha2 = "0.10"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_norway = "0.9.42"
 
 [[test]]
 name = "integration"

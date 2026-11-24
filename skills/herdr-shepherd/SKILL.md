@@ -65,6 +65,23 @@ Use `--model` to override the models for both roles.
 The worker model override applies to every worker, including different agent types.
 Use model overrides with agent types that support the selected model.
 
+## Start from a template
+
+The user can save teams in `~/.config/herdr-shepherd/templates.yaml`.
+Each template has a `repo` field, and optional `base`, `boss`, and `workers` fields.
+Use a template to start a team in a new git worktree:
+
+```sh
+hs --template pay-main --branch-name feat/xyz --destination /path/to/pay-xyz
+```
+
+This command creates the branch `feat/xyz` from the template base, or uses the branch if it exists locally or on `origin`.
+The team starts in the new worktree, and the task name is `feat-xyz`.
+Without `--destination`, the worktree goes next to the repo as `<repo>-<branch>`.
+Without `--branch-name`, the team starts in the template repo.
+Command options override the template fields.
+Run `hs --template NAME --branch-name BRANCH --dry-run` to see the git and herdr commands first.
+
 ## Join an existing team
 
 From a shell in the current herdr pane:

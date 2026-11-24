@@ -35,6 +35,7 @@ pub fn run(args: &[String]) -> Result<()> {
             home.join(".local/bin/herd-boss"),
             root.join("bin/herdr-shepherd"),
         ),
+        (home.join(".local/bin/hs"), root.join("bin/herdr-shepherd")),
         (
             home.join(".local/bin/herd-view"),
             root.join("bin/herd-view"),

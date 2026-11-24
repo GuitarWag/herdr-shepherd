@@ -7,6 +7,7 @@ mod join;
 mod launcher;
 mod mail;
 mod process;
+mod template;
 mod view;
 
 use serde_json::Value;

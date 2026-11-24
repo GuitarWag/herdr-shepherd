@@ -22,7 +22,7 @@ fn install_is_repeatable_and_registers_both_agents() {
     for args in [vec![], vec![], vec!["check"]] {
         status(&f.install(&args), 0);
     }
-    for name in ["herdr-shepherd", "herd-boss", "herd-view"] {
+    for name in ["herdr-shepherd", "herd-boss", "hs", "herd-view"] {
         assert!(f.home.join(".local/bin").join(name).is_symlink());
     }
     for directory in [".claude", ".agents"] {
@@ -423,10 +423,106 @@ fn default_launch_preserves_claude_models_and_names() {
     }
 }
 
+fn template_starts_the_team_in_a_new_worktree() {
+    let f = Fixture::new();
+    let git_path = env::split_paths(&env::var_os("PATH").unwrap())
+        .map(|directory| directory.join("git"))
+        .find(|path| path.is_file())
+        .unwrap();
+    symlink(git_path, f.bin.join("git")).unwrap();
+    let repo = f.root.join("pay");
+    fs::create_dir(&repo).unwrap();
+    let git = |args: &[&str]| {
+        let mut all = vec![
+            "-C",
+            repo.to_str().unwrap(),
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+        ];
+        all.extend_from_slice(args);
+        status(&output(f.command("git", &all), ""), 0);
+    };
+    git(&["init", "-q", "-b", "main"]);
+    git(&["commit", "-q", "--allow-empty", "-m", "start"]);
+    fs::create_dir_all(f.home.join(".config/herdr-shepherd")).unwrap();
+    fs::write(
+        f.home.join(".config/herdr-shepherd/templates.yaml"),
+        format!(
+            "pay-main:\n  repo: {}\n  base: main\n  boss: codex\n  workers: [claude:sonnet, codex]\n",
+            repo.display()
+        ),
+    )
+    .unwrap();
+    let worktree = f.root.join("pay-feat-xyz");
+    let args = ["--template", "pay-main", "--branch-name", "feat/xyz"];
+    let dry = f.run(&[&args[..], &["--dry-run"]].concat());
+    status(&dry, 0);
+    assert!(stdout(&dry).contains(&format!(
+        "git -C {} worktree add -b feat/xyz -- {} main",
+        repo.display(),
+        worktree.display()
+    )));
+    assert!(!worktree.exists());
+    status(&f.run(&args), 0);
+    assert!(worktree.join(".git").is_file());
+    let tab = f
+        .calls()
+        .into_iter()
+        .find(|call| call[..2] == ["tab", "create"])
+        .unwrap();
+    assert_eq!(tab[3], "feat-xyz");
+    assert_eq!(tab[5], worktree.to_str().unwrap());
+    let launches = f.launches();
+    assert_eq!(
+        launches
+            .iter()
+            .map(|args| args[0].as_str())
+            .collect::<Vec<_>>(),
+        ["codex", "claude", "codex"]
+    );
+    assert_eq!(models(&launches)[1], "sonnet");
+    let second = ["--branch-name", "feat/xyz", "--destination", "second"];
+    let same_task = f.run(&[&["--template", "pay-main"], &second[..]].concat());
+    status(&same_task, 2);
+    assert!(stderr(&same_task).contains("feat-xyz-boss already uses the task feat-xyz"));
+    assert!(!f.root.join("second").exists());
+    let checked_out = f.run(&[&["other", "--template", "pay-main"], &second[..]].concat());
+    status(&checked_out, 2);
+    assert!(stderr(&checked_out).contains("git worktree add failed"));
+    git(&["remote", "add", "origin", repo.to_str().unwrap()]);
+    git(&["commit", "-q", "--allow-empty", "-m", "remote"]);
+    git(&["update-ref", "refs/remotes/origin/feat/remote", "HEAD"]);
+    git(&["reset", "-q", "--hard", "HEAD~1"]);
+    status(
+        &f.run(&["--template", "pay-main", "--branch-name", "feat/remote"]),
+        0,
+    );
+    let head = |path: &Path, reference: &str| {
+        stdout(&output(
+            f.command(
+                "git",
+                &["-C", path.to_str().unwrap(), "rev-parse", reference],
+            ),
+            "",
+        ))
+    };
+    assert_eq!(
+        head(&f.root.join("pay-feat-remote"), "HEAD"),
+        head(&repo, "origin/feat/remote")
+    );
+    assert_ne!(head(&repo, "main"), head(&repo, "origin/feat/remote"));
+    let missing = f.run(&["--template", "nope"]);
+    status(&missing, 2);
+    assert!(stderr(&missing).contains("Templates: pay-main"));
+}
+
 fn each_boss_type_supports_mixed_workers() {
     let f = Fixture::new();
     for boss in ["claude", "codex"] {
         f.clear_calls();
+        f.forget("mixed");
         status(
             &f.run(&[
                 "mixed",
@@ -520,6 +616,7 @@ fn codex_model_options_override_role_defaults() {
         (vec!["--model", "shared-model"], ["shared-model"; 2]),
     ] {
         f.clear_calls();
+        f.forget("test");
         let mut args = vec![
             "test",
             "--boss-agent",
@@ -572,6 +669,7 @@ fn agent_entries_select_models_in_a_mixed_list() {
         ]
     );
     f.clear_calls();
+    f.forget("test");
     status(
         &f.run(&[
             "test",
@@ -608,6 +706,7 @@ fn entry_models_win_over_model_options() {
         ["boss-entry", "entry", "shared-option"]
     );
     f.clear_calls();
+    f.forget("test");
     status(
         &f.run(&[
             "test",
@@ -1247,6 +1346,7 @@ fn successful_mutations_can_return_no_output() {
     let mut f = Fixture::new();
     for operation in ["pane send-text", "pane send-keys"] {
         f.clear_calls();
+        f.forget("test");
         f.env.insert("HERD_TEST_EMPTY".into(), operation.into());
         status(&f.run(&["test", "--workers", "0"]), 0);
         assert!(
@@ -1409,6 +1509,7 @@ fn send_stores_the_message_and_types_a_short_pointer() {
     assert!(!stdout(&result).contains("m1-1"));
     assert!(!stale.exists());
     assert!(mailbox.join(format!("{id}.read.md")).exists());
+    f.forget("test");
     status(&f.run(&["test", "--workers", "0"]), 0);
     assert!(!mailbox.exists());
 }
@@ -1439,8 +1540,10 @@ fn director_manages_bosses_and_not_workers() {
     status(&result, 0);
     let team: Value = serde_json::from_str(&stdout(&result)).unwrap();
     assert_eq!(team[0]["under"], "org");
+    f.forget("test");
     status(&f.run(&["test", "--workers", "0"]), 0);
     assert!(!link.exists());
+    f.forget("test");
     status(&f.run(&["test", "--under", "org", "--workers", "0"]), 0);
     assert!(f.launches()[0].last().unwrap().contains(
         "Your director is org-director. Send milestones, blockers and results with: herdr-shepherd test --send org-director."
@@ -1524,6 +1627,7 @@ fn main() {
     // Reuse this test executable as the fake commands and the terminal supervisor.
     macro_rules! cases { ($($name:ident),* $(,)?) => { vec![$((stringify!($name), $name as fn())),*] }; }
     let cases = cases![
+        template_starts_the_team_in_a_new_worktree,
         install_is_repeatable_and_registers_both_agents,
         existing_command_stops_install_before_any_new_links,
         existing_skill_directory_is_preserved,
