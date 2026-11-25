@@ -58,8 +58,12 @@ pub fn run(args: &[String]) -> Result<()> {
             errors.push("herdr 0.7.3 or later is required.".into());
         }
     }
-    if !process::available("claude") && !process::available("codex") {
-        errors.push("Install Claude Code or Codex and add its command to PATH.".into());
+    if !crate::cli::AGENTS
+        .iter()
+        .any(|agent| process::available(agent))
+    {
+        errors
+            .push("Install Claude Code, Codex, pi or opencode and add its command to PATH.".into());
     }
     for (target, source) in &targets {
         if !source.exists() {

@@ -211,7 +211,7 @@ impl Fixture {
         let home = root.join("home");
         fs::create_dir(&bin).unwrap();
         fs::create_dir(&home).unwrap();
-        for name in ["herdr", "claude", "codex"] {
+        for name in ["herdr", "claude", "codex", "pi", "opencode"] {
             symlink(env::current_exe().unwrap(), bin.join(name)).unwrap();
         }
         write_json(root.join("agents.json"), &json!([]));

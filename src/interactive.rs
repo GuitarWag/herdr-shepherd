@@ -27,7 +27,7 @@ fn ask(
     }
 }
 
-/// Accept `agent[:model]`, where the agent can also be 1 or 2.
+/// Accept `agent[:model]`, where the agent can also be 1 through 4.
 pub fn selected_agent(value: &str) -> Result<String> {
     let value = value.trim();
     let (name, model) = match value.split_once(':') {
@@ -37,6 +37,8 @@ pub fn selected_agent(value: &str) -> Result<String> {
     let name = match name {
         "1" => "claude",
         "2" => "codex",
+        "3" => "pi",
+        "4" => "opencode",
         name => name,
     };
     let value = match model {
@@ -101,7 +103,7 @@ fn setup(
     )?;
     writeln!(
         output,
-        "Agents: 1 = Claude Code, 2 = Codex. Enter a number or command name."
+        "Agents: 1 = Claude Code, 2 = Codex, 3 = pi, 4 = opencode. Enter a number or command name."
     )?;
     writeln!(
         output,
@@ -230,5 +232,31 @@ mod tests {
                 .is_none()
         );
         assert!(setup(&mut Cursor::new("task\n"), &mut Vec::new(), false).is_err());
+    }
+
+    #[test]
+    fn selected_agent_maps_3_to_pi() {
+        assert_eq!(selected_agent("3").unwrap(), "pi");
+    }
+
+    #[test]
+    fn selected_agent_maps_4_to_opencode() {
+        assert_eq!(selected_agent("4").unwrap(), "opencode");
+    }
+
+    #[test]
+    fn selected_agent_keeps_the_model_for_a_numbered_agent() {
+        assert_eq!(
+            selected_agent("3:yld/glm-5.3-flash").unwrap(),
+            "pi:yld/glm-5.3-flash"
+        );
+    }
+
+    #[test]
+    fn selected_agent_rejects_an_unsupported_agent() {
+        assert_eq!(
+            selected_agent("gemini").unwrap_err().to_string(),
+            "unsupported agent: gemini"
+        );
     }
 }

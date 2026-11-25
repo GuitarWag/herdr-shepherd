@@ -292,7 +292,7 @@ impl Board {
         };
         let agent = last
             .map(|worker| optional(worker, "agent"))
-            .filter(|agent| matches!(*agent, "claude" | "codex"))
+            .filter(|agent| crate::cli::AGENTS.contains(agent))
             .unwrap_or("claude")
             .to_owned();
         let split = process::herdr(&[

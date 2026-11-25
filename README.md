@@ -5,7 +5,7 @@
 [![platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux-blue)](https://github.com/GuitarWag/herdr-shepherd/releases/latest)
 [![license](https://img.shields.io/github/license/GuitarWag/herdr-shepherd)](LICENSE)
 
-Run Claude Code and Codex as a team. Give the boss a goal; it delegates to workers in their own terminal sessions.
+Run Claude Code, Codex, pi and opencode as a team. Give the boss a goal; it delegates to workers in their own terminal sessions.
 
 Mix agent types and models in the same team. Each agent keeps its own process, context, and permissions. Open the board to see who's working, read their screens, and send a message.
 
@@ -59,7 +59,7 @@ herdr-shepherd auth --cwd /path/to/project \
   --boss-agent codex --worker-agent claude --worker-agent codex
 ```
 
-This creates `auth-boss`, `auth-w1`, and `auth-w2`. Add `--dry-run` to preview a launch. Both roles default to Claude Code; the default worker count is three.
+This creates `auth-boss`, `auth-w1`, and `auth-w2`. Add `--dry-run` to preview a launch. The agent types are `claude`, `codex`, `pi`, and `opencode`. Both roles default to Claude Code; the default worker count is three.
 
 All agents in a team start in the same folder. Give editing workers separate files, or use one editing worker at a time, to avoid overwriting changes.
 

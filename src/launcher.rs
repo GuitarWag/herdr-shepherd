@@ -1,4 +1,8 @@
-use crate::{Result, cli, interactive, process};
+use crate::{
+    Result,
+    cli::{self, AGENTS},
+    interactive, process,
+};
 use crossterm::{
     event::{
         self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEvent, KeyEventKind,
@@ -19,13 +23,12 @@ const ACCENT: Color = Color::Cyan;
 const MUTED: Color = Color::DarkGray;
 // shortcut: the card shows 8 worker rows; use the CLI for larger teams.
 const MAX_WORKERS: usize = 8;
-const AGENTS: [&str; 2] = ["claude", "codex"];
 
 fn presets(agent: &str) -> &'static [&'static str] {
-    if agent == "claude" {
-        &["", "fable", "opus", "sonnet", "haiku"]
-    } else {
-        &["", "gpt-6-astra", "gpt-6.1-sol"]
+    match agent {
+        "claude" => &["", "fable", "opus", "sonnet", "haiku"],
+        "codex" => &["", "gpt-6-astra", "gpt-6.1-sol"],
+        _ => &[""],
     }
 }
 
@@ -216,17 +219,23 @@ impl Launcher {
             }
             field @ (Field::LeadAgent | Field::Agent(_)) => {
                 if let Some(pick) = self.pick(field) {
-                    pick.agent = if pick.agent == AGENTS[0] {
-                        AGENTS[1]
+                    let count = AGENTS.len();
+                    let index = AGENTS.iter().position(|a| *a == pick.agent).unwrap_or(0);
+                    pick.agent = AGENTS[if forward {
+                        (index + 1) % count
                     } else {
-                        AGENTS[0]
-                    };
+                        (index + count - 1) % count
+                    }];
                     pick.model.clear();
                 }
             }
             field @ (Field::LeadModel | Field::Model(_)) => {
                 if let Some(pick) = self.pick(field) {
                     let list = presets(pick.agent);
+                    // pi and opencode have no presets; the arrows keep a typed model.
+                    if list.len() == 1 {
+                        return;
+                    }
                     let next = match list.iter().position(|m| *m == pick.model) {
                         Some(index) if forward => (index + 1) % list.len(),
                         Some(index) => (index + list.len() - 1) % list.len(),
@@ -243,7 +252,11 @@ impl Launcher {
         match self.focus {
             Field::Name => Some(&mut self.name),
             Field::Folder => Some(&mut self.folder),
-            field @ (Field::LeadModel | Field::Model(_)) => self.pick(field).map(|p| &mut p.model),
+            // opencode always starts with the model that the user last selected in it.
+            field @ (Field::LeadModel | Field::Model(_)) => self
+                .pick(field)
+                .filter(|p| p.agent != "opencode")
+                .map(|p| &mut p.model),
             _ => None,
         }
     }
@@ -387,12 +400,17 @@ impl Launcher {
     }
 
     fn agent_row(&self, label: &str, pick: &Pick, lead: bool, fields: [Field; 2]) -> Line<'static> {
-        let selected = AGENTS.iter().position(|a| *a == pick.agent).unwrap_or(0);
+        // A stepper keeps the row narrow; four agent choices overflow a small card.
         let mut spans = vec![self.label(label, &fields)];
-        spans.extend(self.choice(&AGENTS, selected, fields[0]));
-        spans.push(Span::styled("model ", Style::new().fg(MUTED)));
+        spans.extend(self.stepper(pick.agent.to_owned(), false, fields[0]));
+        spans.push(Span::styled("  model ", Style::new().fg(MUTED)));
         let (text, dim) = if pick.model.is_empty() {
-            (cli::default_model(pick.agent, lead).to_owned(), true)
+            let model = match (pick.agent, cli::default_model(pick.agent, lead)) {
+                ("opencode", _) => "last used",
+                (_, "") => "default",
+                (_, model) => model,
+            };
+            (model.to_owned(), true)
         } else {
             (pick.model.clone(), false)
         };
@@ -589,6 +607,24 @@ mod tests {
         Launcher::new(false, vec!["org".into()], None, true).unwrap()
     }
 
+    #[test]
+    fn model_arrows_keep_a_typed_model_without_presets() {
+        let mut launcher = launcher();
+        launcher.focus = Field::LeadAgent;
+        press(&mut launcher, KeyCode::Left);
+        press(&mut launcher, KeyCode::Left);
+        assert_eq!(launcher.lead.agent, "pi");
+        launcher.focus = Field::LeadModel;
+        launcher.insert("yld/glm-5.3-flash");
+        press(&mut launcher, KeyCode::Left);
+        assert_eq!(launcher.lead.entry(), "pi:yld/glm-5.3-flash");
+        launcher.focus = Field::LeadAgent;
+        press(&mut launcher, KeyCode::Right);
+        launcher.focus = Field::LeadModel;
+        launcher.insert("yld/inkling-2-mini");
+        assert_eq!(launcher.lead.entry(), "opencode");
+    }
+
     fn press(launcher: &mut Launcher, code: KeyCode) -> Option<Outcome> {
         launcher.key(KeyEvent::new(code, KeyModifiers::NONE))
     }
@@ -698,7 +734,8 @@ mod tests {
         launcher.insert("auth");
         for (width, height, expected) in [
             (100, 30, "new team · dry run"),
-            (100, 30, "◉ claude"),
+            (100, 30, "◂ claude ▸  model ◂ fable ▸"),
+            (50, 30, "◂ claude ▸  model ◂ opus ▸"),
             (100, 30, "herdr-shepherd auth --cwd"),
             (100, 30, "none"),
             (40, 10, "Resize the terminal"),

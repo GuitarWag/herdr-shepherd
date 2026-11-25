@@ -22,7 +22,7 @@ const HELP: &str = "usage: herdr-shepherd [<task>] [options]
   --send boss|wN|NAME            Store a message and point the agent at it.
   --message TEXT                 The message for --send. Default: standard input.
   --read [ID]                    Print a message, or list unread messages for this pane.
-  --boss-agent AGENT[:MODEL]     claude or codex. Default: claude.
+  --boss-agent AGENT[:MODEL]     claude, codex, pi or opencode. Default: claude.
   --worker-agent AGENT[:MODEL]   Repeat for an ordered list of workers.
   --workers N                    0 through 9999. Default: 3, or the worker list length.
   --cwd PATH                     Default: the current directory.
@@ -49,6 +49,7 @@ A new team with the same task name starts with an empty mailbox.
 Running agents cannot change their model, folder, or agent type when they join.
 Claude defaults: fable for the boss, opus for workers.
 Codex defaults: gpt-6-astra for the boss, gpt-6.1-sol for workers.
+pi uses its configured default model. opencode uses the model last selected in opencode.
 A template has repo, and optional base, boss and workers. Options override it.
 --branch-name reuses a branch from local or origin, or makes it from the base.
 The task name defaults to the branch name, and then to the template name.";
@@ -85,8 +86,11 @@ pub struct Options {
     pub worktree: Option<template::Worktree>,
 }
 
+/// The agent commands that shepherd starts. herdr reports each agent under the same name.
+pub const AGENTS: [&str; 4] = ["claude", "codex", "pi", "opencode"];
+
 pub fn agent(value: &str) -> Result<()> {
-    if matches!(value, "claude" | "codex") {
+    if AGENTS.contains(&value) {
         Ok(())
     } else {
         Err(format!("unsupported agent: {value}").into())
@@ -376,7 +380,25 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
         }
         _ => {}
     }
+    if matches!(options.operation, Operation::Create | Operation::Join) {
+        check_model(&options.boss_agent, &options.boss_model)?;
+        for (index, agent) in options.worker_agents.iter().enumerate() {
+            check_model(agent, options.worker_model(index))?;
+        }
+    }
     Ok(Some(options))
+}
+
+/// opencode 2 starts with the model that the user last selected in it.
+/// Neither a command option nor OPENCODE_CONFIG_CONTENT changes that model.
+fn check_model(agent: &str, model: &str) -> Result<()> {
+    if agent == "opencode" && !model.is_empty() {
+        return Err(format!(
+            "opencode uses the model that you last selected in opencode. Remove the model {model} from the opencode agent, and do not use --model or --worker-model with an opencode worker."
+        )
+        .into());
+    }
+    Ok(())
 }
 
 impl Options {
@@ -390,12 +412,14 @@ impl Options {
 }
 
 /// The model for an agent role when no option selects one.
+/// An empty string lets the agent use its own configured default.
 pub fn default_model(agent: &str, lead: bool) -> &'static str {
     match (agent, lead) {
         ("claude", true) => "fable",
         ("claude", false) => "opus",
-        (_, true) => "gpt-6-astra",
-        _ => "gpt-6.1-sol",
+        ("codex", true) => "gpt-6-astra",
+        ("codex", false) => "gpt-6.1-sol",
+        _ => "",
     }
 }
 
@@ -438,18 +462,24 @@ Run herdr-shepherd {task} --read between worker rounds.",
             options.task
         );
     }
-    let mut args = vec![agent.to_owned()];
-    if agent == "claude" {
-        args.extend(["--name".into(), name.into()]);
-    } else {
-        args.push("--approve-for-me".into());
-    }
     let model = if model.is_empty() {
         default_model(agent, boss)
     } else {
         model
     };
-    args.extend(["--model".into(), model.into(), prompt]);
+    let mut args = Vec::new();
+    args.push(agent.to_owned());
+    match agent {
+        "claude" | "pi" => args.extend(["--name".into(), name.into()]),
+        "codex" => args.push("--approve-for-me".into()),
+        _ => args.push("--auto".into()),
+    }
+    if agent == "opencode" {
+        args.push("--prompt".into());
+    } else if !model.is_empty() {
+        args.extend(["--model".into(), model.into()]);
+    }
+    args.push(prompt);
     Ok(args)
 }
 

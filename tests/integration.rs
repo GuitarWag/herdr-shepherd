@@ -78,12 +78,12 @@ fn stale_link_is_preserved() {
 
 fn missing_agent_stops_install_before_writes() {
     let f = Fixture::new();
-    for agent in ["codex", "claude"] {
+    for agent in ["codex", "claude", "pi", "opencode"] {
         fs::remove_file(f.bin.join(agent)).unwrap();
     }
     let result = f.install(&[]);
     status(&result, 1);
-    assert!(stderr(&result).contains("Install Claude Code or Codex"));
+    assert!(stderr(&result).contains("Install Claude Code, Codex, pi or opencode"));
     assert!(!f.home.join(".local").exists());
 }
 
@@ -632,6 +632,31 @@ fn codex_model_options_override_role_defaults() {
     }
 }
 
+fn pi_and_opencode_use_their_own_options() {
+    let f = Fixture::new();
+    status(
+        &f.run(&[
+            "test",
+            "--boss-agent",
+            "opencode",
+            "--worker-agent",
+            "pi",
+            "--worker-agent",
+            "pi:yld/glm-5.3-flash",
+        ]),
+        0,
+    );
+    let launches = f.launches();
+    assert_eq!(launches[0][..3], ["opencode", "--auto", "--prompt"]);
+    assert_eq!(launches[0].len(), 4);
+    assert_eq!(launches[1][..3], ["pi", "--name", "test-w1"]);
+    assert_eq!(launches[1].len(), 4);
+    assert_eq!(
+        launches[2][..5],
+        ["pi", "--name", "test-w2", "--model", "yld/glm-5.3-flash"]
+    );
+}
+
 fn agent_entries_select_models_in_a_mixed_list() {
     let f = Fixture::new();
     status(
@@ -1019,7 +1044,7 @@ fn add_worker_rejects_unsafe_targets_before_changes() {
             "duplicate-worker" | "change-agent" | "change-model" | "change-entry-model" => {
                 Some("codex")
             }
-            "other-agent" => Some("opencode"),
+            "other-agent" => Some("gemini"),
             "change-directory" => Some("claude"),
             _ => None,
         };
@@ -1120,6 +1145,8 @@ fn modes_reject_incompatible_options() {
             "--worker-agent",
             "codex",
         ],
+        vec!["--worker-agent", "opencode", "--model", "yld/glm-5.3-flash"],
+        vec!["--boss-agent", "opencode:yld/inkling-2-mini"],
     ] {
         let mut full = vec!["test"];
         full.extend(args);
@@ -1612,7 +1639,7 @@ fn team_list_explains_unreachable_server() {
 fn main() {
     let args: Vec<String> = env::args().collect();
     let name = Path::new(&args[0]).file_name().unwrap().to_str().unwrap();
-    if matches!(name, "herdr" | "claude" | "codex") {
+    if matches!(name, "herdr" | "claude" | "codex" | "pi" | "opencode") {
         std::process::exit(fixture_process(name, &args[1..]).unwrap_or_else(|error| {
             eprintln!("{error}");
             1
@@ -1654,6 +1681,7 @@ fn main() {
         single_worker_type_applies_to_the_worker_count,
         codex_model_options_override_role_defaults,
         agent_entries_select_models_in_a_mixed_list,
+        pi_and_opencode_use_their_own_options,
         entry_models_win_over_model_options,
         zero_workers_and_explicit_models,
         model_and_initial_prompt_remain_single_arguments,

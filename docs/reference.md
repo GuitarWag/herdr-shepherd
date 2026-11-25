@@ -60,7 +60,7 @@ herdr-shepherd --interactive --dry-run
 `--interactive` accepts only `--dry-run` and help options.
 Piped input and terminals with `TERM=dumb` use text prompts.
 The text prompts accept blank answers for defaults and `n` to cancel at confirmation.
-The text prompts accept the agent entries `claude`, `codex`, `1`, `2`, and `AGENT:MODEL`, and a comma-separated worker list.
+The text prompts accept the agent entries `claude`, `codex`, `pi`, `opencode`, `1` through `4`, and `AGENT:MODEL`, and a comma-separated worker list.
 Use explicit command options in scripts.
 
 ## Command options
@@ -110,6 +110,8 @@ Both roles default to Claude Code.
 | --- | --- | --- |
 | Claude Code | `fable` | `opus` |
 | Codex | `gpt-6-astra` | `gpt-6.1-sol` |
+| pi | its configured default | its configured default |
+| opencode | the model last selected in opencode | the model last selected in opencode |
 
 Use `--boss-model` or `--worker-model` to change the model for that role.
 Use `--model` to change both roles.
@@ -120,6 +122,11 @@ Select models that your account and each selected agent support.
 
 Codex starts with `--approve-for-me`.
 This retains the workspace sandbox and uses automatic approval review.
+opencode starts with `--auto`, which approves each permission that the configuration does not deny.
+opencode 2 starts with the model that you last selected in opencode, and it has no option to change that model at startup.
+Select the model in opencode before you start the team.
+Shepherd rejects a model for opencode, from an agent entry or from `--model`, `--boss-model` or `--worker-model`.
+pi starts with `--name` and the session name.
 Socket access can require approval from the agent's permission controls.
 
 ## Join and discover a team
@@ -135,7 +142,7 @@ You can omit the task name for `--add-worker` and `--team`.
 The command then uses the one boss that runs in the current folder.
 When no boss or more than one boss runs there, the command stops and asks for the name.
 From a shell pane, `--worker-agent codex:MODEL` selects the agent and its model.
-From an existing Claude Code or Codex session, use `--add-worker` without model or folder options.
+From an existing Claude Code, Codex, pi or opencode session, use `--add-worker` without model or folder options.
 The command rejects a model in `--worker-agent` from a running session.
 The command registers the session and prints its worker instructions.
 It preserves the running session, model, and folder.
