@@ -12,8 +12,31 @@ use std::{
         process::CommandExt,
     },
     path::Path,
-    process::Command,
+    process::{Command, Stdio},
 };
+
+/// Name the agent in a shell pane. herdr 0.8 knows an agent only after its process
+/// starts, and exec replaces this process, so a detached shell retries the rename
+/// once each second for 60 seconds. herdr exits 0 on an error, so the loop checks
+/// the output. The shell receives the lock as its standard input. A copied file
+/// descriptor shares the flock, so the next join waits until the rename ends.
+fn rename_agent(pane: &str, name: &str, lock: &File) -> Result<()> {
+    match process::herdr(&["agent", "rename", pane, name]) {
+        Err(error) if error.to_string().contains("not found") => {}
+        result => return result.map(drop),
+    }
+    let script = r#"for _ in $(seq 60); do
+  sleep 1
+  case $(herdr agent rename "$1" "$2" </dev/null 2>&1) in *'"error"'*) ;; *) exit 0 ;; esac
+done"#;
+    Command::new("/bin/sh")
+        .args(["-c", script, "sh", pane, name])
+        .stdin(Stdio::from(lock.try_clone()?))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+    Ok(())
+}
 
 fn registration_lock(task: &str) -> Result<File> {
     let socket = env::var("HERDR_SOCKET_PATH").unwrap_or_default();
@@ -69,7 +92,7 @@ pub fn run(options: &Options) -> Result<()> {
         .iter()
         .filter(|agent| optional(agent, "name") == boss_name)
         .collect();
-    if bosses.len() != 1 || !matches!(optional(bosses[0], "agent"), "claude" | "codex") {
+    if bosses.len() != 1 || !cli::AGENTS.contains(&optional(bosses[0], "agent")) {
         return Err(format!("Expected one running boss named {boss_name}.").into());
     }
     if string(bosses[0], "pane_id")? == pane {
@@ -153,7 +176,7 @@ pub fn run(options: &Options) -> Result<()> {
     }
     let argv = cli::launch_args(options, selected, &name, options.worker_model(0))?;
     if !options.dry {
-        process::herdr(&["agent", "rename", &pane, &name])?;
+        rename_agent(&pane, &name, &lock)?;
         process::herdr(&["pane", "rename", &pane, &name])?;
     }
     drop(lock);
