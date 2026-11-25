@@ -161,6 +161,26 @@ mod tests {
     }
 
     #[test]
+    fn quote_empty_string_returns_empty_single_quotes() {
+        assert_eq!(quote(""), "''");
+    }
+
+    #[test]
+    fn quote_safe_word_is_unquoted() {
+        assert_eq!(quote("abc"), "abc");
+    }
+
+    #[test]
+    fn quote_value_with_space_is_single_quoted() {
+        assert_eq!(quote("a b"), "'a b'");
+    }
+
+    #[test]
+    fn quote_value_with_single_quote_is_escaped() {
+        assert_eq!(quote("a'b"), "'a'\\''b'");
+    }
+
+    #[test]
     fn timeout_stops_children_that_hold_output_pipes() {
         for script in ["sleep 10 & wait", "sleep 10 & exit 0"] {
             let start = Instant::now();
