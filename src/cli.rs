@@ -49,7 +49,7 @@ A new team with the same task name starts with an empty mailbox.
 Running agents cannot change their model, folder, or agent type when they join.
 Claude defaults: fable for the boss, opus for workers.
 Codex defaults: gpt-6-astra for the boss, gpt-6.1-sol for workers.
-pi uses its configured default model. opencode uses the model last selected in opencode.
+pi uses its configured default model. opencode uses the model key in its own config.
 A template has repo, and optional base, boss and workers. Options override it.
 --branch-name reuses a branch from local or origin, or makes it from the base.
 The task name defaults to the branch name, and then to the template name.";
@@ -389,12 +389,13 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
     Ok(Some(options))
 }
 
-/// opencode 2 starts with the model that the user last selected in it.
+/// The opencode 2 terminal interface sends its first prompt through a shared
+/// background service, which uses the `model` key from the opencode config.
 /// Neither a command option nor OPENCODE_CONFIG_CONTENT changes that model.
 fn check_model(agent: &str, model: &str) -> Result<()> {
     if agent == "opencode" && !model.is_empty() {
         return Err(format!(
-            "opencode uses the model that you last selected in opencode. Remove the model {model} from the opencode agent, and do not use --model or --worker-model with an opencode worker."
+            "opencode uses the model key in ~/.config/opencode/opencode.json. Remove the model {model} from the opencode agent, and do not use --model or --worker-model with an opencode worker."
         )
         .into());
     }
@@ -458,8 +459,10 @@ Run herdr-shepherd {task} --read between worker rounds.",
         }
     } else {
         prompt += &format!(
-            " Your boss is {}-boss. Wait for a task. Report results in this pane for the boss to read.",
-            options.task
+            " Your boss is {task}-boss. End your turn now. The boss sends your task as input in this pane. \
+Do not poll for messages and do not run wait loops. \
+Report each result with: herdr-shepherd {task} --send boss --message \"RESULT\".",
+            task = options.task
         );
     }
     let model = if model.is_empty() {
@@ -481,6 +484,36 @@ Run herdr-shepherd {task} --read between worker rounds.",
     }
     args.push(prompt);
     Ok(args)
+}
+
+/// The most worker rows in one column. More workers add columns.
+const COLUMN_ROWS: usize = 4;
+
+/// The splits for `count` worker panes, in creation order, as
+/// (worker index, parent worker or None for the boss, direction, ratio).
+/// herdr gives the parent pane `ratio` of the space. Workers fill the columns
+/// in order, and each column and each row gets an equal share.
+fn layout(count: usize) -> Vec<(usize, Option<usize>, &'static str, f64)> {
+    let columns = count.div_ceil(COLUMN_ROWS);
+    // The first `count % columns` columns hold one more worker.
+    let rows = |column: usize| count / columns + usize::from(column < count % columns);
+    let first = |column: usize| (0..column).map(rows).sum::<usize>();
+    let mut splits = Vec::new();
+    for column in 0..columns {
+        let (parent, ratio) = match column {
+            0 => (None, 0.35),
+            _ => (Some(first(column - 1)), 1.0 / (columns - column + 1) as f64),
+        };
+        splits.push((first(column), parent, "right", ratio));
+    }
+    for column in 0..columns {
+        let top = first(column);
+        for row in 1..rows(column) {
+            let ratio = 1.0 / (rows(column) - row + 1) as f64;
+            splits.push((top + row, Some(top + row - 1), "down", ratio));
+        }
+    }
+    splits
 }
 
 /// The shell discards input that arrives before its line editor starts.
@@ -599,18 +632,19 @@ pub fn create(options: &Options) -> Result<()> {
     )?;
     rename_agent(options, &boss, &name)?;
     println!("{role}  {boss}  {}", options.boss_agent);
-    let mut previous = boss;
-    for (index, agent) in options.worker_agents.iter().enumerate() {
-        let direction = if index == 0 { "right" } else { "down" };
-        let ratio = if index == 0 { "0.35" } else { "0.5" };
+    // Create every pane first, then start the agents in worker order.
+    let mut panes: Vec<String> = Vec::new();
+    for (index, parent, direction, ratio) in layout(options.worker_agents.len()) {
+        let source = parent.map_or(boss.as_str(), |parent| panes[parent].as_str());
+        let ratio = format!("{ratio:.4}");
         let split = [
             "pane",
             "split",
-            &previous,
+            source,
             "--direction",
             direction,
             "--ratio",
-            ratio,
+            &ratio,
             "--cwd",
             cwd,
             "--no-focus",
@@ -621,13 +655,21 @@ pub fn create(options: &Options) -> Result<()> {
         } else {
             string(&process::herdr(&split)?["pane"], "pane_id")?.to_owned()
         };
-        let name = format!("{}-w{}", options.task, index + 1);
-        process::run(options.dry, &["pane", "rename", &pane, &name])?;
-        launch(options, &pane, agent, &name, options.worker_model(index))?;
-        rename_agent(options, &pane, &name)?;
-        println!("w{}    {pane}  {agent}", index + 1);
-        previous = pane;
+        if panes.len() <= index {
+            panes.resize(index + 1, String::new());
+        }
+        panes[index] = pane;
     }
+    for (index, agent) in options.worker_agents.iter().enumerate() {
+        let pane = &panes[index];
+        let name = format!("{}-w{}", options.task, index + 1);
+        process::run(options.dry, &["pane", "rename", pane, &name])?;
+        launch(options, pane, agent, &name, options.worker_model(index))?;
+        rename_agent(options, pane, &name)?;
+        println!("w{}    {pane}  {agent}", index + 1);
+    }
+    // w1 is in the first column, so its left neighbor is the boss.
+    let previous = panes.first().cloned().unwrap_or(boss);
     if !options.dry {
         let _ = process::herdr(&["pane", "focus", "--direction", "left", "--pane", &previous]);
         if options.director {
@@ -644,4 +686,33 @@ pub fn create(options: &Options) -> Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::layout;
+
+    #[test]
+    fn layout_gives_columns_of_equal_rows() {
+        assert!(layout(0).is_empty());
+        let three = layout(3);
+        assert_eq!(three[0], (0, None, "right", 0.35));
+        assert_eq!(three[1], (1, Some(0), "down", 1.0 / 3.0));
+        assert_eq!(three[2], (2, Some(1), "down", 0.5));
+        let eight = layout(8);
+        assert_eq!(
+            eight[..2],
+            [(0, None, "right", 0.35), (4, Some(0), "right", 0.5)]
+        );
+        assert_eq!(eight[2], (1, Some(0), "down", 0.25));
+        assert_eq!(eight[5], (5, Some(4), "down", 0.25));
+        assert_eq!(eight.len(), 8);
+        // Nine workers use three columns of three rows.
+        let tops: Vec<_> = layout(9)
+            .iter()
+            .filter(|s| s.2 == "right")
+            .map(|s| s.0)
+            .collect();
+        assert_eq!(tops, [0, 3, 6]);
+    }
 }

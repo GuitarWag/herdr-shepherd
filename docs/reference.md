@@ -111,7 +111,7 @@ Both roles default to Claude Code.
 | Claude Code | `fable` | `opus` |
 | Codex | `gpt-6-astra` | `gpt-6.1-sol` |
 | pi | its configured default | its configured default |
-| opencode | the model last selected in opencode | the model last selected in opencode |
+| opencode | the `model` key in the opencode config | the `model` key in the opencode config |
 
 Use `--boss-model` or `--worker-model` to change the model for that role.
 Use `--model` to change both roles.
@@ -123,8 +123,10 @@ Select models that your account and each selected agent support.
 Codex starts with `--approve-for-me`.
 This retains the workspace sandbox and uses automatic approval review.
 opencode starts with `--auto`, which approves each permission that the configuration does not deny.
-opencode 2 starts with the model that you last selected in opencode, and it has no option to change that model at startup.
-Select the model in opencode before you start the team.
+opencode 2 sends the first prompt through its shared background service, which uses the `model` key in `~/.config/opencode/opencode.json`.
+Without that key, opencode selects a default from its configured providers, and that default can be a provider that you cannot use.
+Set the key, for example `"model": "yld/glm-5.3-flash"`, and run `opencode service restart`.
+A team cannot give different opencode agents different models.
 Shepherd rejects a model for opencode, from an agent entry or from `--model`, `--boss-model` or `--worker-model`.
 pi starts with `--name` and the session name.
 Socket access can require approval from the agent's permission controls.

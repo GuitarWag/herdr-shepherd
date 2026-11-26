@@ -35,6 +35,9 @@ This command opens a Codex boss, a Claude Code worker, and a Codex worker.
 The launcher gives each agent its role and the path to this skill.
 The boss waits for the user's task.
 Workers wait for work from the boss.
+A waiting agent ends its turn and stays idle.
+Do not poll the mailbox, sleep, or run wait loops to receive work.
+A message pointer arrives as input in your pane.
 Every session starts in the selected folder.
 Keep each task name unique on the herdr server.
 
@@ -60,7 +63,7 @@ Use `--dry-run` to preview a launch without creating panes.
 
 Claude Code defaults to `fable` for the boss and `opus` for workers.
 Codex defaults to `gpt-6-astra` for the boss and `gpt-6.1-sol` for workers.
-pi uses its configured default model. opencode uses the model last selected in opencode and accepts no model option.
+pi uses its configured default model. opencode uses the `model` key in its own config and accepts no model option.
 Use `--boss-model` or `--worker-model` to override the model for that role.
 Use `--model` to override the models for both roles.
 The worker model override applies to every worker, including different agent types.
@@ -168,7 +171,7 @@ If the input is unclear, inspect `herdr pane read <pane_id> --source visible --a
 Distinguish suggested text from entered text before you submit a prompt.
 
 ```sh
-herdr-shepherd my-task --send w1 --message "Read internal/auth/token.go. List every caller. Report the result in this pane."
+herdr-shepherd my-task --send w1 --message "Read internal/auth/token.go. List every caller. Report the result to the boss."
 ```
 
 The command stores the message in `~/.local/state/herdr-shepherd/mail/my-task/<id>.md`.
@@ -284,17 +287,17 @@ If the input still contains your complete task, submit the prompt with `Enter`.
 If the agent requests permission, report that request to the user.
 Keep the agent's permission controls enabled.
 
-Workers report results in their own panes by default.
-The boss uses `wait` and `read` to receive those results.
-A worker can contact an idle boss with `herdr-shepherd my-task --send boss --message "..."`.
-Send a direct reply only when the boss requests it.
-This prevents a worker from inserting text into an active boss session.
+Workers report each result with `herdr-shepherd my-task --send boss --message "..."`.
+The mailbox keeps the complete result, and the boss reads it with `herdr-shepherd my-task --read`.
+A worker pane can be small, and a full-screen agent shows little text, so do not rely on the pane for results.
+Use `agent wait` and `agent read` to check a worker that sent no report.
 
 ## Run workers together
 
 Send each worker its task before you wait for results.
 Give workers separate tasks.
-Use `agent wait` and `agent read` to check each result.
+Read the reports with `herdr-shepherd my-task --read`.
+Stop each server or background process that you start before you report to the user.
 
 ## Return control to the user
 

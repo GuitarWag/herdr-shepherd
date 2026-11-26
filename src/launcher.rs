@@ -252,7 +252,7 @@ impl Launcher {
         match self.focus {
             Field::Name => Some(&mut self.name),
             Field::Folder => Some(&mut self.folder),
-            // opencode always starts with the model that the user last selected in it.
+            // opencode takes its model from its own config, not from shepherd.
             field @ (Field::LeadModel | Field::Model(_)) => self
                 .pick(field)
                 .filter(|p| p.agent != "opencode")
@@ -406,7 +406,7 @@ impl Launcher {
         spans.push(Span::styled("  model ", Style::new().fg(MUTED)));
         let (text, dim) = if pick.model.is_empty() {
             let model = match (pick.agent, cli::default_model(pick.agent, lead)) {
-                ("opencode", _) => "last used",
+                ("opencode", _) => "config",
                 (_, "") => "default",
                 (_, model) => model,
             };
