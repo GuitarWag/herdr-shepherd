@@ -63,7 +63,7 @@ Use `--dry-run` to preview a launch without creating panes.
 
 Claude Code defaults to `fable` for the boss and `opus` for workers.
 Codex defaults to `gpt-6-astra` for the boss and `gpt-6.1-sol` for workers.
-pi uses its configured default model. opencode uses the `model` key in its own config and accepts no model option.
+pi uses its configured default model. opencode without a model uses its own default. With a model, shepherd first creates the session with `opencode run -m MODEL --session ID` and then opens the opencode interface on that session, because the opencode 2 interface has no model option.
 Use `--boss-model` or `--worker-model` to override the model for that role.
 Use `--model` to override the models for both roles.
 The worker model override applies to every worker, including different agent types.

@@ -657,6 +657,32 @@ fn pi_and_opencode_use_their_own_options() {
     );
 }
 
+fn opencode_model_creates_the_session_first() {
+    let f = Fixture::new();
+    status(
+        &f.run(&[
+            "test",
+            "--boss-agent",
+            "opencode:yld/inkling-2-mini",
+            "--workers",
+            "0",
+        ]),
+        0,
+    );
+    let send = f
+        .calls()
+        .into_iter()
+        .find(|call| call[..2] == ["pane", "send-text"])
+        .unwrap();
+    assert!(
+        send[3].starts_with("opencode run --auto -m yld/inkling-2-mini --session ses_testboss")
+    );
+    let launch = &f.launches()[0];
+    assert_eq!(launch[..3], ["opencode", "--auto", "--session"]);
+    assert!(send[3].contains(&format!("--session {} ", launch[3])));
+    assert_eq!(launch[4], "--prompt");
+}
+
 fn agent_entries_select_models_in_a_mixed_list() {
     let f = Fixture::new();
     status(
@@ -1145,8 +1171,6 @@ fn modes_reject_incompatible_options() {
             "--worker-agent",
             "codex",
         ],
-        vec!["--worker-agent", "opencode", "--model", "yld/glm-5.3-flash"],
-        vec!["--boss-agent", "opencode:yld/inkling-2-mini"],
     ] {
         let mut full = vec!["test"];
         full.extend(args);
@@ -1682,6 +1706,7 @@ fn main() {
         codex_model_options_override_role_defaults,
         agent_entries_select_models_in_a_mixed_list,
         pi_and_opencode_use_their_own_options,
+        opencode_model_creates_the_session_first,
         entry_models_win_over_model_options,
         zero_workers_and_explicit_models,
         model_and_initial_prompt_remain_single_arguments,
