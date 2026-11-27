@@ -424,7 +424,7 @@ fn default_launch_preserves_claude_models_and_names() {
 }
 
 fn template_starts_the_team_in_a_new_worktree() {
-    let f = Fixture::new();
+    let mut f = Fixture::new();
     let git_path = env::split_paths(&env::var_os("PATH").unwrap())
         .map(|directory| directory.join("git"))
         .find(|path| path.is_file())
@@ -516,6 +516,11 @@ fn template_starts_the_team_in_a_new_worktree() {
     let missing = f.run(&["--template", "nope"]);
     status(&missing, 2);
     assert!(stderr(&missing).contains("Templates: pay-main"));
+    f.env
+        .insert("HERD_TEST_ERROR".into(), "workspace get".into());
+    let typo = ["--template", "pay-main", "--branch-name", "feat/typo"];
+    status(&f.run(&[&typo[..], &["--workspace", "w99"]].concat()), 2);
+    assert!(!f.root.join("pay-feat-typo").exists());
 }
 
 fn each_boss_type_supports_mixed_workers() {
@@ -927,6 +932,19 @@ fn dry_run_needs_no_agent_or_herdr_binary() {
     );
     status(&f.run(&["test", "--boss-agent", "codex", "--dry-run"]), 0);
     assert!(f.calls().is_empty());
+}
+
+fn workspace_selects_the_herdr_workspace_for_the_tab() {
+    let f = Fixture::new();
+    let result = f.run(&["test", "--workspace", "w7", "--workers", "0", "--dry-run"]);
+    status(&result, 0);
+    assert!(stdout(&result).contains("tab create --workspace w7 --label test"));
+    status(&f.run(&["test", "--team", "--workspace", "w7"]), 2);
+    status(&f.run(&["test", "--workspace", "w7", "--workers", "0"]), 0);
+    let calls = f.calls();
+    assert_eq!(calls[0], ["workspace", "get", "w7"]);
+    let tab = calls.iter().find(|call| call[..2] == ["tab", "create"]);
+    assert_eq!(tab.unwrap()[2..4], ["--workspace", "w7"]);
 }
 
 fn add_worker_starts_selected_agent_in_the_current_terminal() {
@@ -1715,6 +1733,7 @@ fn main() {
         symlink_launch_resolves_the_skill,
         missing_selected_binary_stops_before_tab_creation,
         dry_run_needs_no_agent_or_herdr_binary,
+        workspace_selects_the_herdr_workspace_for_the_tab,
         add_worker_starts_selected_agent_in_the_current_terminal,
         add_worker_accepts_an_entry_model_from_a_shell_pane,
         add_worker_starts_claude_by_default,

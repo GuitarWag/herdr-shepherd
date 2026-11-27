@@ -26,6 +26,8 @@ const HELP: &str = "usage: herdr-shepherd [<task>] [options]
   --worker-agent AGENT[:MODEL]   Repeat for an ordered list of workers.
   --workers N                    0 through 9999. Default: 3, or the worker list length.
   --cwd PATH                     Default: the current directory.
+  --workspace ID                 Open the team tab in this herdr workspace.
+                                 Default: the focused workspace.
   --template NAME                Start the team from a template in
                                  ~/.config/herdr-shepherd/templates.yaml.
   --branch-name BRANCH           Start the team in a new git worktree on BRANCH.
@@ -84,6 +86,8 @@ pub struct Options {
     /// The task of the director that this boss reports to.
     pub under: String,
     pub worktree: Option<template::Worktree>,
+    /// The herdr workspace ID for the team tab. Empty means the focused workspace.
+    pub workspace: String,
 }
 
 /// The agent commands that shepherd starts. herdr reports each agent under the same name.
@@ -148,6 +152,7 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
         director: false,
         under: String::new(),
         worktree: None,
+        workspace: String::new(),
     };
     let mut template_name = String::new();
     let mut branch = String::new();
@@ -163,7 +168,7 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
         match option {
             "--workers" | "--cwd" | "--boss-agent" | "--worker-agent" | "--boss-model"
             | "--worker-model" | "--model" | "--under" | "--template" | "--branch-name"
-            | "--destination" => {
+            | "--destination" | "--workspace" => {
                 index += 1;
                 let value = args
                     .get(index)
@@ -171,7 +176,7 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
                     .ok_or_else(|| format!("{option} requires a value"))?;
                 match option {
                     "--workers" | "--boss-agent" | "--boss-model" | "--under" | "--template"
-                    | "--branch-name" | "--destination" => create_options = true,
+                    | "--branch-name" | "--destination" | "--workspace" => create_options = true,
                     "--cwd" => options.change_directory = true,
                     _ => worker_options = true,
                 }
@@ -186,6 +191,7 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
                     "--template" => template_name = value.clone(),
                     "--branch-name" => branch = value.clone(),
                     "--destination" => destination = value.clone(),
+                    "--workspace" => options.workspace = value.clone(),
                     _ => {
                         options.boss_model = value.clone();
                         options.worker_model = value.clone();
@@ -591,6 +597,10 @@ pub fn create(options: &Options) -> Result<()> {
         }
     }
     if !options.dry {
+        // Fail before the worktree exists.
+        if !options.workspace.is_empty() {
+            process::herdr(&["workspace", "get", &options.workspace])?;
+        }
         // Every team of one task shares a mailbox, and launch clears it.
         let agents = process::herdr(&["agent", "list"])?;
         for role in ["boss", "director"] {
@@ -614,15 +624,11 @@ pub fn create(options: &Options) -> Result<()> {
         .cwd
         .to_str()
         .ok_or("The folder path must use UTF-8.")?;
-    let tab_args = [
-        "tab",
-        "create",
-        "--label",
-        &options.task,
-        "--cwd",
-        cwd,
-        "--focus",
-    ];
+    let mut tab_args = vec!["tab", "create"];
+    if !options.workspace.is_empty() {
+        tab_args.extend(["--workspace", &options.workspace]);
+    }
+    tab_args.extend(["--label", &options.task, "--cwd", cwd, "--focus"]);
     let boss = if options.dry {
         println!("Dry run. No panes are created.");
         process::run(true, &tab_args)?;

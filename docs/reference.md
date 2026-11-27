@@ -93,6 +93,10 @@ Multiple entries define the worker order and count.
 An explicit count must match a list with multiple entries.
 The default count is three.
 Use `--workers 0` to start only a boss.
+
+herdr-shepherd opens the team tab in the focused herdr workspace.
+Use `--workspace ID` to open it in another workspace.
+Run `herdr workspace list` to find the workspace ID.
 Add `--dry-run` to preview commands.
 Use `herdr-shepherd -h` for all options.
 
