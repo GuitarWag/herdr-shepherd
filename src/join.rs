@@ -190,6 +190,15 @@ pub fn run(options: &Options) -> Result<()> {
     } else if options.dry {
         println!("  {}", process::shell_command(&argv));
     } else {
+        if let Some(session) = cli::opencode_session(&argv, options.worker_model(0)) {
+            let created = Command::new(&session[0])
+                .args(&session[1..])
+                .current_dir(&options.cwd)
+                .status()?;
+            if !created.success() {
+                return Err("opencode could not create the session with the model.".into());
+            }
+        }
         return Err(Command::new(&argv[0])
             .args(&argv[1..])
             .current_dir(&options.cwd)

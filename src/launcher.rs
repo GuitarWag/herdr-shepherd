@@ -252,11 +252,7 @@ impl Launcher {
         match self.focus {
             Field::Name => Some(&mut self.name),
             Field::Folder => Some(&mut self.folder),
-            // opencode takes its model from its own config, not from shepherd.
-            field @ (Field::LeadModel | Field::Model(_)) => self
-                .pick(field)
-                .filter(|p| p.agent != "opencode")
-                .map(|p| &mut p.model),
+            field @ (Field::LeadModel | Field::Model(_)) => self.pick(field).map(|p| &mut p.model),
             _ => None,
         }
     }
@@ -622,7 +618,7 @@ mod tests {
         press(&mut launcher, KeyCode::Right);
         launcher.focus = Field::LeadModel;
         launcher.insert("yld/inkling-2-mini");
-        assert_eq!(launcher.lead.entry(), "opencode");
+        assert_eq!(launcher.lead.entry(), "opencode:yld/inkling-2-mini");
     }
 
     fn press(launcher: &mut Launcher, code: KeyCode) -> Option<Outcome> {

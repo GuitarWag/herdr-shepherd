@@ -4,7 +4,7 @@ use std::{
     path::PathBuf,
     process::Command,
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 const HELP: &str = "usage: herdr-shepherd [<task>] [options]
@@ -49,7 +49,7 @@ A new team with the same task name starts with an empty mailbox.
 Running agents cannot change their model, folder, or agent type when they join.
 Claude defaults: fable for the boss, opus for workers.
 Codex defaults: gpt-6-astra for the boss, gpt-6.1-sol for workers.
-pi uses its configured default model. opencode uses the model key in its own config.
+pi uses its configured default model. opencode without a model uses its own default.
 A template has repo, and optional base, boss and workers. Options override it.
 --branch-name reuses a branch from local or origin, or makes it from the base.
 The task name defaults to the branch name, and then to the template name.";
@@ -380,26 +380,31 @@ pub fn parse(args: &[String]) -> Result<Option<Options>> {
         }
         _ => {}
     }
-    if matches!(options.operation, Operation::Create | Operation::Join) {
-        check_model(&options.boss_agent, &options.boss_model)?;
-        for (index, agent) in options.worker_agents.iter().enumerate() {
-            check_model(agent, options.worker_model(index))?;
-        }
-    }
     Ok(Some(options))
 }
 
-/// The opencode 2 terminal interface sends its first prompt through a shared
-/// background service, which uses the `model` key from the opencode config.
-/// Neither a command option nor OPENCODE_CONFIG_CONTENT changes that model.
-fn check_model(agent: &str, model: &str) -> Result<()> {
-    if agent == "opencode" && !model.is_empty() {
-        return Err(format!(
-            "opencode uses the model key in ~/.config/opencode/opencode.json. Remove the model {model} from the opencode agent, and do not use --model or --worker-model with an opencode worker."
-        )
-        .into());
+/// The opencode 2 terminal interface has no model option and ignores the
+/// configured model. A session that `opencode run -m` creates keeps its model,
+/// so this command creates the session before the interface opens it.
+pub fn opencode_session(args: &[String], model: &str) -> Option<Vec<String>> {
+    if args.first().map(String::as_str) != Some("opencode") || model.is_empty() {
+        return None;
     }
-    Ok(())
+    let session = args.iter().skip_while(|arg| *arg != "--session").nth(1)?;
+    Some(
+        [
+            "opencode",
+            "run",
+            "--auto",
+            "-m",
+            model,
+            "--session",
+            session,
+            "Reply with the word ready.",
+        ]
+        .map(String::from)
+        .to_vec(),
+    )
 }
 
 impl Options {
@@ -478,6 +483,11 @@ Report each result with: herdr-shepherd {task} --send boss --message \"RESULT\".
         _ => args.push("--auto".into()),
     }
     if agent == "opencode" {
+        if !model.is_empty() {
+            let millis = SystemTime::now().duration_since(UNIX_EPOCH)?.as_millis();
+            let label: String = name.chars().filter(char::is_ascii_alphanumeric).collect();
+            args.extend(["--session".into(), format!("ses_{label}{millis}")]);
+        }
         args.push("--prompt".into());
     } else if !model.is_empty() {
         args.extend(["--model".into(), model.into()]);
@@ -537,7 +547,11 @@ pub fn wait_for_prompt(pane: &str) -> Result<()> {
 }
 
 fn launch(options: &Options, pane: &str, agent: &str, name: &str, model: &str) -> Result<()> {
-    let command = process::shell_command(&launch_args(options, agent, name, model)?);
+    let args = launch_args(options, agent, name, model)?;
+    let mut command = process::shell_command(&args);
+    if let Some(session) = opencode_session(&args, model) {
+        command = format!("{} && {command}", process::shell_command(&session));
+    }
     if !options.dry {
         wait_for_prompt(pane)?;
     }
